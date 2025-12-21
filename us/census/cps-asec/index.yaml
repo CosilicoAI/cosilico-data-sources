@@ -1,0 +1,82 @@
+# CPS ASEC Variable Index
+# Current Population Survey - Annual Social and Economic Supplement
+
+source: cps-asec
+provider: "U.S. Census Bureau"
+description: "Annual household survey providing income, poverty, and health insurance data"
+url: "https://www.census.gov/programs-surveys/cps.html"
+documentation: "https://www2.census.gov/programs-surveys/cps/techdocs/cpsmar24.pdf"
+
+years_available: [2018, 2019, 2020, 2021, 2022, 2023, 2024]
+
+entities:
+  - person
+  - tax_unit
+  - spm_unit
+  - household
+  - family
+
+variables:
+  # Income Variables
+  - WSAL_VAL       # Wages and salaries
+  - INT_VAL        # Interest income
+  - DIV_VAL        # Dividend income
+  - SEMP_VAL       # Self-employment (nonfarm)
+  - FRSE_VAL       # Farm self-employment
+  - RNT_VAL        # Rental income
+  - SS_VAL         # Social Security
+  - SSI_VAL        # Supplemental Security Income
+  - UC_VAL         # Unemployment compensation
+  - VET_VAL        # Veterans benefits
+  - WC_VAL         # Workers compensation
+  - PAW_VAL        # Public assistance/welfare
+  - CSP_VAL        # Child support
+  - ANN_VAL        # Annuity/pension income
+  - PNSN_VAL       # Pension income
+  - OI_VAL         # Other income
+  - CAP_VAL        # Capital gains (limited)
+
+  # Tax Unit Variables
+  - AGI            # Adjusted gross income
+  - EIT_CRED       # Earned Income Tax Credit
+  - CTC_CRD        # Child Tax Credit
+  - ACTC_CRD       # Additional Child Tax Credit
+  - FEDTAX_AC      # Federal income tax after credits
+  - FEDTAX_BC      # Federal income tax before credits
+  - STATETAX_A     # State income tax after credits
+  - STATETAX_B     # State income tax before credits
+  - TAX_INC        # Taxable income
+  - MARG_TAX       # Marginal tax rate
+
+  # SPM Unit Variables
+  - SPM_SNAPSUB    # SNAP subsidy
+  - SPM_EITC       # EITC (SPM calculation)
+  - SPM_ACTC       # Additional CTC
+  - SPM_WICVAL     # WIC value
+  - SPM_SCHLUNCH   # School lunch subsidy
+  - SPM_ENGVAL     # Energy assistance
+  - SPM_BBSUBVAL   # Broadband benefit
+  - SPM_CAPHOUSESUB  # Housing subsidy
+  - SPM_FEDTAX     # Federal taxes
+  - SPM_STTAX      # State taxes
+  - SPM_FICA       # FICA taxes
+  - SPM_WEIGHT     # SPM weight
+  - SPM_RESOURCES  # Total resources
+  - SPM_POVTHRESHOLD  # Poverty threshold
+
+  # Demographics
+  - A_AGE          # Age
+  - A_SEX          # Sex
+  - A_MARITL       # Marital status
+  - PRDTRACE       # Race
+  - PRDTHSP        # Hispanic origin
+  - PRCITSHP       # Citizenship status
+  - A_HSCOL        # Educational attainment
+
+  # Identifiers
+  - PH_SEQ         # Household sequence
+  - PF_SEQ         # Family sequence
+  - P_SEQ          # Person sequence
+  - TAX_ID         # Tax unit ID
+  - SPM_ID         # SPM unit ID
+  - A_FNLWGT       # Person weight
