@@ -1,15 +1,36 @@
-# microsources
+# cosilico-data-sources
 
-Canonical documentation of microdata sources and their mappings to statute-defined concepts.
+Canonical documentation of data sources for tax-benefit microsimulation.
 
 ## Purpose
 
-This repository documents how variables in surveys and administrative samples map to legal definitions in tax and benefit statutes. It bridges the gap between:
+This repository documents both **micro** (individual-level) and **macro** (aggregate) data sources:
 
-- **Data sources** (CPS ASEC, IRS PUF, UK FRS, etc.)
-- **Legal concepts** (wages per 26 USC § 61(a)(1), SNAP per 7 USC § 2017, UC per WRA 2012)
+- **Micro**: Survey and administrative microdata variable mappings to statutes
+- **Macro**: Administrative totals for calibration and validation
+
+## Structure
+
+```
+cosilico-data-sources/
+├── micro/                       # Individual-level data sources
+│   ├── us/                      # United States
+│   │   ├── census/cps-asec/     # CPS ASEC variables
+│   │   └── irs/puf/             # IRS PUF variables
+│   └── uk/                      # United Kingdom
+│       └── ons/frs/             # FRS variables
+├── macro/                       # Aggregate targets
+│   ├── targets.db               # SQLite (dev); Supabase in prod
+│   └── [future: YAML configs]
+├── db/                          # Database schema and ETL
+│   ├── schema.py                # SQLModel tables
+│   └── etl_soi.py               # IRS SOI loader
+└── README.md
+```
 
 ## Current Coverage
+
+### Micro (Variable Mappings)
 
 | Source | Variables | Description |
 |--------|-----------|-------------|
@@ -18,24 +39,12 @@ This repository documents how variables in surveys and administrative samples ma
 | UK FRS | 29 | DWP household survey (income, benefits, housing) |
 | **Total** | **118** | |
 
-## Structure
+### Macro (Targets)
 
-```
-microsources/
-├── us/                          # United States sources
-│   ├── census/                  # Census Bureau surveys
-│   │   ├── cps-asec/           # Current Population Survey ASEC
-│   │   └── acs/                # American Community Survey
-│   └── irs/                    # IRS administrative data
-│       └── puf/                # Public Use File
-├── uk/                          # United Kingdom sources
-│   ├── ons/                    # Office for National Statistics
-│   │   └── frs/                # Family Resources Survey
-│   └── hmrc/                   # HM Revenue & Customs
-│       └── spi/                # Survey of Personal Incomes
-└── cross-national/              # Multi-country sources
-    └── lis/                    # Luxembourg Income Study
-```
+| Source | Coverage | Description |
+|--------|----------|-------------|
+| IRS SOI | National + AGI brackets | Tax return aggregates |
+| (planned) HMRC | UK national | Tax and benefit totals |
 
 ## Variable Schema
 
@@ -55,34 +64,46 @@ documentation:
 concept: wages_and_salaries
 definition: "Gross wages, salaries, tips before deductions"
 
-# Statute mappings across jurisdictions
 maps_to:
   - jurisdiction: us
     statute: "26 USC § 61(a)(1)"
     variable: wages
     coverage: full
 
-  - jurisdiction: us-ca
-    statute: "CA Rev & Tax Code § 17071"
-    variable: wages
-    coverage: full
-
-# Known limitations
 gaps:
   - component: tips_underreporting
-    impact: medium  # critical, high, medium, low
+    impact: medium
     notes: "Cash tips systematically underreported"
+```
+
+## Targets Database
+
+Three-table schema (following policyengine-us-data patterns):
+
+- **strata**: Population subgroups (e.g., "CA filers with AGI $50k-$75k")
+- **stratum_constraints**: Rules defining each stratum
+- **targets**: Administrative totals linked to strata
+
+Local SQLite for development; Supabase for production.
+
+```python
+from db.schema import init_db, get_session
+from db.etl_soi import load_soi_targets
+
+# Initialize and load
+init_db()
+with get_session() as session:
+    load_soi_targets(session, years=[2021])
 ```
 
 ## Related Repositories
 
-- **cosilico-microdata** - Builds calibrated datasets using these mappings
-- **cosilico-us** / **cosilico-uk** - Statute encodings that reference these concepts
-- **targets** (planned) - Administrative totals for calibration (SOI, HMRC stats)
+- **cosilico-microdata** - Builds calibrated datasets using these sources
+- **cosilico-us** / **cosilico-uk** - Statute encodings referencing these concepts
 
 ## Contributing
 
-1. Add variable YAML file in appropriate source directory
-2. Include documentation URL from official source
-3. Map to all relevant jurisdiction statutes
-4. Document known gaps with impact assessment
+1. **Micro**: Add variable YAML in `micro/<country>/<source>/`
+2. **Macro**: Add ETL script in `db/etl_<source>.py`
+3. Include official documentation URLs
+4. Document coverage and known gaps
