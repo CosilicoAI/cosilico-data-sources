@@ -165,7 +165,7 @@ def get_or_create_stratum(
     stratum_group_id: str | None = None,
 ) -> Stratum:
     """Get existing stratum or create new one."""
-    definition_hash = Stratum.compute_hash(constraints)
+    definition_hash = Stratum.compute_hash(constraints, jurisdiction)
 
     # Check if exists
     existing = session.exec(

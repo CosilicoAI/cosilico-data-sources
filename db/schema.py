@@ -86,11 +86,16 @@ class Stratum(SQLModel, table=True):
     targets: list["Target"] = Relationship(back_populates="stratum")
 
     @classmethod
-    def compute_hash(cls, constraints: list[tuple[str, str, str]]) -> str:
-        """Compute unique hash from constraint definitions."""
+    def compute_hash(
+        cls,
+        constraints: list[tuple[str, str, str]],
+        jurisdiction: "Jurisdiction | None" = None,
+    ) -> str:
+        """Compute unique hash from constraint definitions and jurisdiction."""
         sorted_constraints = sorted(constraints)
-        constraint_str = str(sorted_constraints)
-        return hashlib.sha256(constraint_str.encode()).hexdigest()[:16]
+        # Include jurisdiction to avoid collisions between US/UK strata
+        hash_input = f"{jurisdiction}:{sorted_constraints}"
+        return hashlib.sha256(hash_input.encode()).hexdigest()[:16]
 
 
 class StratumConstraint(SQLModel, table=True):
