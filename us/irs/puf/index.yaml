@@ -6,7 +6,7 @@ description: "Sample of individual income tax returns with detailed income, dedu
 url: "https://www.irs.gov/statistics/soi-tax-stats-individual-public-use-microdata-files"
 documentation: "https://www.irs.gov/pub/irs-soi/15inpuf.pdf"
 
-years_available: [2015, 2021, 2023, 2024]  # Via uprating
+years_available: [2015]  # Raw data year; uprating handled separately
 
 entities:
   - tax_unit
