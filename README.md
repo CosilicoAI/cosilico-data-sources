@@ -1,4 +1,4 @@
-# cosilico-microdata-sources
+# microsources
 
 Canonical documentation of microdata sources and their mappings to statute-defined concepts.
 
@@ -6,13 +6,22 @@ Canonical documentation of microdata sources and their mappings to statute-defin
 
 This repository documents how variables in surveys and administrative samples map to legal definitions in tax and benefit statutes. It bridges the gap between:
 
-- **Data sources** (CPS, ACS, IRS PUF, UK FRS, etc.)
-- **Legal concepts** (wages per IRC § 61(a)(1), SNAP benefits per 7 USC § 2017)
+- **Data sources** (CPS ASEC, IRS PUF, UK FRS, etc.)
+- **Legal concepts** (wages per 26 USC § 61(a)(1), SNAP per 7 USC § 2017, UC per WRA 2012)
+
+## Current Coverage
+
+| Source | Variables | Description |
+|--------|-----------|-------------|
+| US CPS ASEC | 56 | Census household survey (income, benefits, demographics) |
+| US IRS PUF | 33 | Tax return sample (income, deductions, credits) |
+| UK FRS | 29 | DWP household survey (income, benefits, housing) |
+| **Total** | **118** | |
 
 ## Structure
 
 ```
-cosilico-microdata-sources/
+microsources/
 ├── us/                          # United States sources
 │   ├── census/                  # Census Bureau surveys
 │   │   ├── cps-asec/           # Current Population Survey ASEC
@@ -35,27 +44,23 @@ Each variable file (YAML) contains:
 ```yaml
 variable: WSAL_VAL              # Source variable name
 source: cps-asec                # Source identifier
-entity: person                  # person, household, tax_unit
-period: year                    # year, month
+entity: person                  # person, household, tax_unit, spm_unit
+period: year                    # year, month, week, point_in_time
 dtype: money                    # money, count, rate, boolean, category
 
-# Documentation reference
 documentation:
   url: "https://www2.census.gov/..."
   section: "Person Income Variables"
-  question: "How much did you earn from wages and salaries?"
 
-# Concept mapping
 concept: wages_and_salaries
 definition: "Gross wages, salaries, tips before deductions"
 
-# Statute mappings (can span jurisdictions)
+# Statute mappings across jurisdictions
 maps_to:
   - jurisdiction: us
     statute: "26 USC § 61(a)(1)"
-    variable: wages  # cosilico-us variable
+    variable: wages
     coverage: full
-    notes: "Direct mapping to gross wages"
 
   - jurisdiction: us-ca
     statute: "CA Rev & Tax Code § 17071"
@@ -65,20 +70,19 @@ maps_to:
 # Known limitations
 gaps:
   - component: tips_underreporting
-    impact: medium
-    notes: "Cash tips systematically underreported in surveys"
+    impact: medium  # critical, high, medium, low
+    notes: "Cash tips systematically underreported"
 ```
 
-## Usage
+## Related Repositories
 
-These mappings are consumed by:
-- `cosilico-microdata` - to build calibrated datasets
-- `cosilico-us`, `cosilico-uk` - for variable documentation
-- Validation tools - to verify coverage
+- **cosilico-microdata** - Builds calibrated datasets using these mappings
+- **cosilico-us** / **cosilico-uk** - Statute encodings that reference these concepts
+- **targets** (planned) - Administrative totals for calibration (SOI, HMRC stats)
 
 ## Contributing
 
 1. Add variable YAML file in appropriate source directory
 2. Include documentation URL from official source
 3. Map to all relevant jurisdiction statutes
-4. Document known gaps and coverage issues
+4. Document known gaps with impact assessment

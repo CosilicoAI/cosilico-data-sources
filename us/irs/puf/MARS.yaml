@@ -1,0 +1,29 @@
+variable: MARS
+source: puf
+entity: tax_unit
+period: year
+dtype: category
+
+documentation:
+  url: "https://www.irs.gov/statistics/soi-tax-stats-individual-public-use-microdata-files"
+  section: "Filing Information"
+
+concept: filing_status
+definition: "Marital/filing status (1=Single, 2=MFJ, 3=MFS, 4=HoH)"
+
+maps_to:
+  - jurisdiction: us
+    statute: "26 USC § 1"
+    variable: filing_status
+    coverage: full
+    notes: "Determines tax brackets and standard deduction"
+
+  - jurisdiction: us
+    statute: "26 USC § 2(a)"
+    variable: surviving_spouse
+    coverage: partial
+
+  - jurisdiction: us
+    statute: "26 USC § 2(b)"
+    variable: head_of_household
+    coverage: full
