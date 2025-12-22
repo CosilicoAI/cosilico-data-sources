@@ -5,6 +5,8 @@ Loads data from IRS SOI tables into the targets database.
 Data source: https://www.irs.gov/statistics/soi-tax-stats-individual-income-tax-statistics
 """
 
+from __future__ import annotations
+
 from sqlmodel import Session, select
 
 from .schema import (

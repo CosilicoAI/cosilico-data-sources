@@ -7,6 +7,8 @@ Data sources:
 - https://www.gov.uk/government/collections/national-insurance-contributions-statistics
 """
 
+from __future__ import annotations
+
 from sqlmodel import Session, select
 
 from .schema import (

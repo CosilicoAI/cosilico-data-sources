@@ -40,6 +40,24 @@ def cmd_load(args):
             load_hmrc_targets(session, years=years)
             print(f"Loaded HMRC targets for years: {years or 'all available'}")
 
+        if args.source == "census" or args.source == "all":
+            from .etl_census import load_census_targets
+            years = [int(y) for y in args.years.split(",")] if args.years else None
+            load_census_targets(session, years=years)
+            print(f"Loaded Census targets for years: {years or 'all available'}")
+
+        if args.source == "ssa" or args.source == "all":
+            from .etl_ssa import load_ssa_targets
+            years = [int(y) for y in args.years.split(",")] if args.years else None
+            load_ssa_targets(session, years=years)
+            print(f"Loaded SSA targets for years: {years or 'all available'}")
+
+        if args.source == "bls" or args.source == "all":
+            from .etl_bls import load_bls_targets
+            years = [int(y) for y in args.years.split(",")] if args.years else None
+            load_bls_targets(session, years=years)
+            print(f"Loaded BLS targets for years: {years or 'all available'}")
+
 
 def cmd_stats(args):
     """Show database statistics."""
@@ -121,7 +139,7 @@ def main():
     load_parser = subparsers.add_parser("load", help="Load targets from source")
     load_parser.add_argument(
         "source",
-        choices=["soi", "snap", "hmrc", "all"],
+        choices=["soi", "snap", "hmrc", "census", "ssa", "bls", "all"],
         help="Data source to load"
     )
     load_parser.add_argument(

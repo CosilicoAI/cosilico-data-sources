@@ -19,6 +19,9 @@ from .schema import (
 from .etl_soi import load_soi_targets
 from .etl_snap import load_snap_targets
 from .etl_hmrc import load_hmrc_targets
+from .etl_census import load_census_targets
+from .etl_ssa import load_ssa_targets
+from .etl_bls import load_bls_targets
 
 __all__ = [
     # Schema
@@ -35,4 +38,7 @@ __all__ = [
     "load_soi_targets",
     "load_snap_targets",
     "load_hmrc_targets",
+    "load_census_targets",
+    "load_ssa_targets",
+    "load_bls_targets",
 ]

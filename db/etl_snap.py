@@ -5,6 +5,8 @@ Loads data from USDA Food and Nutrition Service into the targets database.
 Data source: https://www.fns.usda.gov/pd/supplemental-nutrition-assistance-program-snap
 """
 
+from __future__ import annotations
+
 from sqlmodel import Session, select
 
 from .schema import (

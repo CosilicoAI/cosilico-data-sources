@@ -39,6 +39,7 @@ class DataSource(str, Enum):
     CENSUS_ACS = "census-acs"
     USDA_SNAP = "usda-snap"
     SSA = "ssa"
+    BLS = "bls"
     CMS_MEDICAID = "cms-medicaid"
 
     # UK sources
