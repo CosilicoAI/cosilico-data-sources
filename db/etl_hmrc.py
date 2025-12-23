@@ -170,7 +170,7 @@ def load_hmrc_targets(session: Session, years: list[int] | None = None):
             session,
             name="UK All Taxpayers",
             jurisdiction=Jurisdiction.UK,
-            constraints=[],  # No constraints = all UK
+            constraints=[("is_taxpayer", "==", "1")],  # Taxpayers only, not whole population
             description="All UK taxpayers",
             stratum_group_id="uk_national",
         )

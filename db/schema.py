@@ -41,11 +41,13 @@ class DataSource(str, Enum):
     SSA = "ssa"
     BLS = "bls"
     CMS_MEDICAID = "cms-medicaid"
+    CBO = "cbo"  # Congressional Budget Office projections
 
     # UK sources
     HMRC = "hmrc"
     DWP = "dwp"
     ONS = "ons"
+    OBR = "obr"  # Office for Budget Responsibility projections
 
 
 class TargetType(str, Enum):

@@ -58,6 +58,18 @@ def cmd_load(args):
             load_bls_targets(session, years=years)
             print(f"Loaded BLS targets for years: {years or 'all available'}")
 
+        if args.source == "cbo" or args.source == "all":
+            from .etl_cbo import load_cbo_targets
+            years = [int(y) for y in args.years.split(",")] if args.years else None
+            load_cbo_targets(session, years=years)
+            print(f"Loaded CBO projections for years: {years or 'all available'}")
+
+        if args.source == "obr" or args.source == "all":
+            from .etl_obr import load_obr_targets
+            years = [int(y) for y in args.years.split(",")] if args.years else None
+            load_obr_targets(session, years=years)
+            print(f"Loaded OBR projections for years: {years or 'all available'}")
+
 
 def cmd_stats(args):
     """Show database statistics."""
@@ -139,7 +151,7 @@ def main():
     load_parser = subparsers.add_parser("load", help="Load targets from source")
     load_parser.add_argument(
         "source",
-        choices=["soi", "snap", "hmrc", "census", "ssa", "bls", "all"],
+        choices=["soi", "snap", "hmrc", "census", "ssa", "bls", "cbo", "obr", "all"],
         help="Data source to load"
     )
     load_parser.add_argument(

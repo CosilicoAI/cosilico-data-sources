@@ -22,6 +22,8 @@ from .etl_hmrc import load_hmrc_targets
 from .etl_census import load_census_targets
 from .etl_ssa import load_ssa_targets
 from .etl_bls import load_bls_targets
+from .etl_cbo import load_cbo_targets
+from .etl_obr import load_obr_targets
 
 __all__ = [
     # Schema
@@ -34,11 +36,14 @@ __all__ = [
     "get_engine",
     "get_session",
     "init_db",
-    # ETL
+    # ETL - Historical
     "load_soi_targets",
     "load_snap_targets",
     "load_hmrc_targets",
     "load_census_targets",
     "load_ssa_targets",
     "load_bls_targets",
+    # ETL - Projections
+    "load_cbo_targets",
+    "load_obr_targets",
 ]

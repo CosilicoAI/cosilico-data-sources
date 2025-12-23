@@ -224,7 +224,7 @@ def load_soi_targets(session: Session, years: list[int] | None = None):
             session,
             name="US All Filers",
             jurisdiction=Jurisdiction.US_FEDERAL,
-            constraints=[],  # No constraints = all filers
+            constraints=[("is_tax_filer", "==", "1")],  # Tax filers only, not whole population
             description="All individual income tax returns filed in the US",
             stratum_group_id="national",
         )
