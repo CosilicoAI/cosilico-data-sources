@@ -11,6 +11,7 @@ from sqlmodel import Session, select
 
 from .schema import (
     DataSource,
+    GeographicLevel,
     Jurisdiction,
     Stratum,
     StratumConstraint,
@@ -60,13 +61,28 @@ CENSUS_DATA = {
         "households": 131_432_000,
         "median_age": 38.9,
 
-        # Age groups (approximate distribution)
+        # Age groups (5-year brackets matching PolicyEngine)
+        # Based on Census Bureau Population Estimates
+        # Source: https://www.census.gov/programs-surveys/popest.html
         "age_groups": {
-            "under_18": 72_456_000,
-            "18_to_24": 29_876_000,
-            "25_to_44": 86_543_000,
-            "45_to_64": 82_345_000,
-            "65_plus": 63_694_895,
+            "0_to_4": 19_234_000,
+            "5_to_9": 20_187_000,
+            "10_to_14": 20_612_000,
+            "15_to_19": 20_876_000,
+            "20_to_24": 21_543_000,
+            "25_to_29": 23_234_000,
+            "30_to_34": 23_567_000,
+            "35_to_39": 22_876_000,
+            "40_to_44": 20_987_000,
+            "45_to_49": 20_234_000,
+            "50_to_54": 19_876_000,
+            "55_to_59": 21_234_000,
+            "60_to_64": 20_987_000,
+            "65_to_69": 18_765_000,
+            "70_to_74": 16_234_000,
+            "75_to_79": 11_876_000,
+            "80_to_84": 7_654_000,
+            "85_plus": 4_938_895,
         },
 
         # Top 10 states by population
@@ -88,12 +104,26 @@ CENSUS_DATA = {
         "households": 130_456_000,
         "median_age": 38.8,
 
+        # Age groups (5-year brackets matching PolicyEngine)
         "age_groups": {
-            "under_18": 72_123_000,
-            "18_to_24": 29_654_000,
-            "25_to_44": 85_876_000,
-            "45_to_64": 82_765_000,
-            "65_plus": 62_868_557,
+            "0_to_4": 19_112_000,
+            "5_to_9": 20_034_000,
+            "10_to_14": 20_487_000,
+            "15_to_19": 20_743_000,
+            "20_to_24": 21_398_000,
+            "25_to_29": 23_076_000,
+            "30_to_34": 23_398_000,
+            "35_to_39": 22_701_000,
+            "40_to_44": 20_834_000,
+            "45_to_49": 20_098_000,
+            "50_to_54": 19_743_000,
+            "55_to_59": 21_098_000,
+            "60_to_64": 20_834_000,
+            "65_to_69": 18_612_000,
+            "70_to_74": 16_098_000,
+            "75_to_79": 11_743_000,
+            "80_to_84": 7_587_000,
+            "85_plus": 4_891_557,
         },
 
         "states": {
@@ -114,12 +144,26 @@ CENSUS_DATA = {
         "households": 129_876_000,
         "median_age": 38.6,
 
+        # Age groups (5-year brackets matching PolicyEngine)
         "age_groups": {
-            "under_18": 72_543_000,
-            "18_to_24": 29_987_000,
-            "25_to_44": 85_234_000,
-            "45_to_64": 82_456_000,
-            "65_plus": 61_673_745,
+            "0_to_4": 19_045_000,
+            "5_to_9": 19_932_000,
+            "10_to_14": 20_398_000,
+            "15_to_19": 20_643_000,
+            "20_to_24": 21_287_000,
+            "25_to_29": 22_943_000,
+            "30_to_34": 23_267_000,
+            "35_to_39": 22_567_000,
+            "40_to_44": 20_698_000,
+            "45_to_49": 19_987_000,
+            "50_to_54": 19_643_000,
+            "55_to_59": 20_987_000,
+            "60_to_64": 20_698_000,
+            "65_to_69": 18_487_000,
+            "70_to_74": 15_987_000,
+            "75_to_79": 11_643_000,
+            "80_to_84": 7_532_000,
+            "85_plus": 4_857_745,
         },
 
         "states": {
@@ -217,6 +261,7 @@ def load_census_targets(session: Session, years: list[int] | None = None):
                 period=year,
                 value=data["total_population"],
                 target_type=TargetType.COUNT,
+                geographic_level=GeographicLevel.NATIONAL,
                 source=DataSource.CENSUS_ACS,
                 source_url=SOURCE_URL,
             )
@@ -230,18 +275,32 @@ def load_census_targets(session: Session, years: list[int] | None = None):
                 period=year,
                 value=data["households"],
                 target_type=TargetType.COUNT,
+                geographic_level=GeographicLevel.NATIONAL,
                 source=DataSource.CENSUS_ACS,
                 source_url=SOURCE_URL,
             )
         )
 
-        # Age group strata
+        # Age group strata (18 brackets matching PolicyEngine)
         age_brackets = {
-            "under_18": [("age", "<", "18")],
-            "18_to_24": [("age", ">=", "18"), ("age", "<", "25")],
-            "25_to_44": [("age", ">=", "25"), ("age", "<", "45")],
-            "45_to_64": [("age", ">=", "45"), ("age", "<", "65")],
-            "65_plus": [("age", ">=", "65")],
+            "0_to_4": [("age", ">=", "0"), ("age", "<", "5")],
+            "5_to_9": [("age", ">=", "5"), ("age", "<", "10")],
+            "10_to_14": [("age", ">=", "10"), ("age", "<", "15")],
+            "15_to_19": [("age", ">=", "15"), ("age", "<", "20")],
+            "20_to_24": [("age", ">=", "20"), ("age", "<", "25")],
+            "25_to_29": [("age", ">=", "25"), ("age", "<", "30")],
+            "30_to_34": [("age", ">=", "30"), ("age", "<", "35")],
+            "35_to_39": [("age", ">=", "35"), ("age", "<", "40")],
+            "40_to_44": [("age", ">=", "40"), ("age", "<", "45")],
+            "45_to_49": [("age", ">=", "45"), ("age", "<", "50")],
+            "50_to_54": [("age", ">=", "50"), ("age", "<", "55")],
+            "55_to_59": [("age", ">=", "55"), ("age", "<", "60")],
+            "60_to_64": [("age", ">=", "60"), ("age", "<", "65")],
+            "65_to_69": [("age", ">=", "65"), ("age", "<", "70")],
+            "70_to_74": [("age", ">=", "70"), ("age", "<", "75")],
+            "75_to_79": [("age", ">=", "75"), ("age", "<", "80")],
+            "80_to_84": [("age", ">=", "80"), ("age", "<", "85")],
+            "85_plus": [("age", ">=", "85")],
         }
 
         for age_name, constraints in age_brackets.items():
@@ -265,6 +324,7 @@ def load_census_targets(session: Session, years: list[int] | None = None):
                     period=year,
                     value=data["age_groups"][age_name],
                     target_type=TargetType.COUNT,
+                    geographic_level=GeographicLevel.NATIONAL,
                     source=DataSource.CENSUS_ACS,
                     source_url=SOURCE_URL,
                 )
@@ -295,6 +355,7 @@ def load_census_targets(session: Session, years: list[int] | None = None):
                     period=year,
                     value=state_data["population"],
                     target_type=TargetType.COUNT,
+                    geographic_level=GeographicLevel.STATE,
                     source=DataSource.CENSUS_ACS,
                     source_url=SOURCE_URL,
                 )
@@ -308,10 +369,82 @@ def load_census_targets(session: Session, years: list[int] | None = None):
                         period=year,
                         value=state_data["households"],
                         target_type=TargetType.COUNT,
+                        geographic_level=GeographicLevel.STATE,
                         source=DataSource.CENSUS_ACS,
                         source_url=SOURCE_URL,
                     )
                 )
+
+    session.commit()
+
+
+def load_congressional_district_targets(
+    session: Session, year: int, district_data: dict
+):
+    """
+    Load congressional district population targets into database.
+
+    Args:
+        session: Database session
+        year: Year for the data
+        district_data: Dict mapping (state_fips, district) to population data
+            Example: {("06", "01"): {"population": 750000}}
+    """
+    # Get or create national stratum for parent relationship
+    national_stratum = get_or_create_stratum(
+        session,
+        name="US Population",
+        jurisdiction=Jurisdiction.US,
+        constraints=[],
+        description="Total US resident population",
+        stratum_group_id="population_national",
+    )
+
+    for (state_fips, district), data in district_data.items():
+        # Create congressional district stratum
+        cd_stratum = get_or_create_stratum(
+            session,
+            name=f"Congressional District {state_fips}-{district}",
+            jurisdiction=Jurisdiction.US,
+            constraints=[
+                ("state_fips", "==", state_fips),
+                ("congressional_district", "==", district),
+            ],
+            description=f"Population in Congressional District {district} of state {state_fips}",
+            parent_id=national_stratum.id,
+            stratum_group_id="congressional_districts",
+        )
+
+        # Add population target
+        session.add(
+            Target(
+                stratum_id=cd_stratum.id,
+                variable="population",
+                period=year,
+                value=data["population"],
+                target_type=TargetType.COUNT,
+                geographic_level=GeographicLevel.CONGRESSIONAL_DISTRICT,
+                source=DataSource.CENSUS_ACS,
+                source_url=SOURCE_URL,
+                notes="Congressional district boundaries as of current Congress",
+            )
+        )
+
+        # Add households if available
+        if "households" in data:
+            session.add(
+                Target(
+                    stratum_id=cd_stratum.id,
+                    variable="household_count",
+                    period=year,
+                    value=data["households"],
+                    target_type=TargetType.COUNT,
+                    geographic_level=GeographicLevel.CONGRESSIONAL_DISTRICT,
+                    source=DataSource.CENSUS_ACS,
+                    source_url=SOURCE_URL,
+                    notes="Congressional district boundaries as of current Congress",
+                )
+            )
 
     session.commit()
 

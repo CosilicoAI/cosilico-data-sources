@@ -76,8 +76,8 @@ class TestCensusPopulationETL:
                 select(Stratum).where(Stratum.stratum_group_id == "age_groups")
             ).all()
 
-            # Should have multiple age groups
-            assert len(age_strata) >= 5
+            # Should have 18 age groups (5-year brackets)
+            assert len(age_strata) == 18
 
     def test_load_creates_state_strata(self, temp_db):
         """Loading Census should create state population strata."""

@@ -1,4 +1,4 @@
-"""Tests for state-level SOI income by source ETL."""
+"""Tests for IRS SOI income by source ETL."""
 
 import tempfile
 from pathlib import Path
@@ -15,7 +15,8 @@ from db.schema import (
 )
 from db.etl_soi_income_sources import (
     load_soi_income_sources_targets,
-    SOI_INCOME_SOURCES_DATA,
+    SOI_NATIONAL_INCOME_SOURCES_DATA,
+    SOI_STATE_INCOME_SOURCES_DATA,
     STATE_FIPS,
     INCOME_SOURCES,
     SOURCE_URL,
@@ -32,7 +33,7 @@ def temp_db():
 
 
 class TestSoiIncomeSourcesETL:
-    """Tests for state-level SOI income sources ETL loader."""
+    """Tests for IRS SOI income sources ETL loader."""
 
     def test_load_soi_income_sources_creates_national_stratum(self, temp_db):
         """Loading income source data should create/reference a national stratum."""
@@ -45,6 +46,30 @@ class TestSoiIncomeSourcesETL:
 
             assert national is not None
             assert national.stratum_group_id == "national"
+
+    def test_load_national_income_sources_targets(self, temp_db):
+        """Loading should create national-level income source targets."""
+        with Session(temp_db) as session:
+            load_soi_income_sources_targets(session, years=[2021])
+
+            national = session.exec(
+                select(Stratum).where(Stratum.name == "US All Filers")
+            ).first()
+
+            # Check taxable interest target
+            taxable_interest_target = session.exec(
+                select(Target)
+                .where(Target.stratum_id == national.id)
+                .where(Target.variable == "taxable_interest_returns")
+                .where(Target.period == 2021)
+            ).first()
+
+            assert taxable_interest_target is not None
+            expected = SOI_NATIONAL_INCOME_SOURCES_DATA[2021]["taxable_interest_returns"]
+            assert taxable_interest_target.value == expected
+            assert taxable_interest_target.target_type == TargetType.COUNT
+            assert taxable_interest_target.source == DataSource.IRS_SOI
+            assert taxable_interest_target.source_table == "Publication 1304, Table 1.4"
 
     def test_load_soi_income_sources_creates_state_strata(self, temp_db):
         """Loading income source data should create state-level strata."""
@@ -60,8 +85,8 @@ class TestSoiIncomeSourcesETL:
             assert len(state_strata) == expected_states
             assert expected_states == 51  # 50 states + DC
 
-    def test_load_wages_returns_targets(self, temp_db):
-        """Loading income sources should create wages returns count targets."""
+    def test_load_taxable_interest_targets(self, temp_db):
+        """Loading income sources should create taxable interest targets."""
         with Session(temp_db) as session:
             load_soi_income_sources_targets(session, years=[2021])
 
@@ -71,42 +96,32 @@ class TestSoiIncomeSourcesETL:
 
             assert ca_stratum is not None
 
-            wages_returns_target = session.exec(
+            # Returns count target
+            returns_target = session.exec(
                 select(Target)
                 .where(Target.stratum_id == ca_stratum.id)
-                .where(Target.variable == "wages_returns")
+                .where(Target.variable == "taxable_interest_returns")
                 .where(Target.period == 2021)
             ).first()
 
-            assert wages_returns_target is not None
-            expected = SOI_INCOME_SOURCES_DATA[2021]["CA"]["wages_returns"]
-            assert wages_returns_target.value == expected
-            assert wages_returns_target.target_type == TargetType.COUNT
-            assert wages_returns_target.source == DataSource.IRS_SOI
+            assert returns_target is not None
+            expected = SOI_STATE_INCOME_SOURCES_DATA[2021]["CA"]["taxable_interest_returns"]
+            assert returns_target.value == expected
+            assert returns_target.target_type == TargetType.COUNT
 
-    def test_load_wages_amount_targets(self, temp_db):
-        """Loading income sources should create wages amount targets."""
-        with Session(temp_db) as session:
-            load_soi_income_sources_targets(session, years=[2021])
-
-            tx_stratum = session.exec(
-                select(Stratum).where(Stratum.name == "TX All Filers")
-            ).first()
-
-            wages_amount_target = session.exec(
+            # Amount target
+            amount_target = session.exec(
                 select(Target)
-                .where(Target.stratum_id == tx_stratum.id)
-                .where(Target.variable == "wages_amount")
+                .where(Target.stratum_id == ca_stratum.id)
+                .where(Target.variable == "taxable_interest_amount")
                 .where(Target.period == 2021)
             ).first()
 
-            assert wages_amount_target is not None
-            expected = SOI_INCOME_SOURCES_DATA[2021]["TX"]["wages_amount"]
-            assert wages_amount_target.value == expected
-            assert wages_amount_target.target_type == TargetType.AMOUNT
+            assert amount_target is not None
+            assert amount_target.target_type == TargetType.AMOUNT
 
-    def test_load_dividends_targets(self, temp_db):
-        """Loading income sources should create dividends targets."""
+    def test_load_tax_exempt_interest_targets(self, temp_db):
+        """Loading income sources should create tax-exempt interest targets."""
         with Session(temp_db) as session:
             load_soi_income_sources_targets(session, years=[2021])
 
@@ -114,28 +129,39 @@ class TestSoiIncomeSourcesETL:
                 select(Stratum).where(Stratum.name == "FL All Filers")
             ).first()
 
-            dividends_returns_target = session.exec(
+            target = session.exec(
                 select(Target)
                 .where(Target.stratum_id == fl_stratum.id)
-                .where(Target.variable == "dividends_returns")
+                .where(Target.variable == "tax_exempt_interest_returns")
                 .where(Target.period == 2021)
             ).first()
 
-            assert dividends_returns_target is not None
-            expected = SOI_INCOME_SOURCES_DATA[2021]["FL"]["dividends_returns"]
-            assert dividends_returns_target.value == expected
+            assert target is not None
+            expected = SOI_STATE_INCOME_SOURCES_DATA[2021]["FL"]["tax_exempt_interest_returns"]
+            assert target.value == expected
 
-            dividends_amount_target = session.exec(
+    def test_load_ordinary_dividends_targets(self, temp_db):
+        """Loading income sources should create ordinary dividends targets."""
+        with Session(temp_db) as session:
+            load_soi_income_sources_targets(session, years=[2021])
+
+            tx_stratum = session.exec(
+                select(Stratum).where(Stratum.name == "TX All Filers")
+            ).first()
+
+            target = session.exec(
                 select(Target)
-                .where(Target.stratum_id == fl_stratum.id)
-                .where(Target.variable == "dividends_amount")
+                .where(Target.stratum_id == tx_stratum.id)
+                .where(Target.variable == "ordinary_dividends_amount")
                 .where(Target.period == 2021)
             ).first()
 
-            assert dividends_amount_target is not None
+            assert target is not None
+            expected = SOI_STATE_INCOME_SOURCES_DATA[2021]["TX"]["ordinary_dividends_amount"]
+            assert target.value == expected
 
-    def test_load_interest_targets(self, temp_db):
-        """Loading income sources should create interest targets."""
+    def test_load_qualified_dividends_targets(self, temp_db):
+        """Loading income sources should create qualified dividends targets."""
         with Session(temp_db) as session:
             load_soi_income_sources_targets(session, years=[2021])
 
@@ -143,19 +169,19 @@ class TestSoiIncomeSourcesETL:
                 select(Stratum).where(Stratum.name == "NY All Filers")
             ).first()
 
-            interest_returns_target = session.exec(
+            target = session.exec(
                 select(Target)
                 .where(Target.stratum_id == ny_stratum.id)
-                .where(Target.variable == "interest_returns")
+                .where(Target.variable == "qualified_dividends_returns")
                 .where(Target.period == 2021)
             ).first()
 
-            assert interest_returns_target is not None
-            expected = SOI_INCOME_SOURCES_DATA[2021]["NY"]["interest_returns"]
-            assert interest_returns_target.value == expected
+            assert target is not None
+            expected = SOI_STATE_INCOME_SOURCES_DATA[2021]["NY"]["qualified_dividends_returns"]
+            assert target.value == expected
 
-    def test_load_capital_gains_targets(self, temp_db):
-        """Loading income sources should create capital gains targets."""
+    def test_load_short_term_capital_gains_targets(self, temp_db):
+        """Loading income sources should create short-term capital gains targets."""
         with Session(temp_db) as session:
             load_soi_income_sources_targets(session, years=[2021])
 
@@ -163,28 +189,39 @@ class TestSoiIncomeSourcesETL:
                 select(Stratum).where(Stratum.name == "WA All Filers")
             ).first()
 
-            cap_gains_returns_target = session.exec(
+            target = session.exec(
                 select(Target)
                 .where(Target.stratum_id == wa_stratum.id)
-                .where(Target.variable == "capital_gains_returns")
+                .where(Target.variable == "short_term_capital_gains_amount")
                 .where(Target.period == 2021)
             ).first()
 
-            assert cap_gains_returns_target is not None
-            expected = SOI_INCOME_SOURCES_DATA[2021]["WA"]["capital_gains_returns"]
-            assert cap_gains_returns_target.value == expected
+            assert target is not None
+            expected = SOI_STATE_INCOME_SOURCES_DATA[2021]["WA"]["short_term_capital_gains_amount"]
+            assert target.value == expected
 
-            cap_gains_amount_target = session.exec(
+    def test_load_long_term_capital_gains_targets(self, temp_db):
+        """Loading income sources should create long-term capital gains targets."""
+        with Session(temp_db) as session:
+            load_soi_income_sources_targets(session, years=[2021])
+
+            nj_stratum = session.exec(
+                select(Stratum).where(Stratum.name == "NJ All Filers")
+            ).first()
+
+            target = session.exec(
                 select(Target)
-                .where(Target.stratum_id == wa_stratum.id)
-                .where(Target.variable == "capital_gains_amount")
+                .where(Target.stratum_id == nj_stratum.id)
+                .where(Target.variable == "long_term_capital_gains_returns")
                 .where(Target.period == 2021)
             ).first()
 
-            assert cap_gains_amount_target is not None
+            assert target is not None
+            expected = SOI_STATE_INCOME_SOURCES_DATA[2021]["NJ"]["long_term_capital_gains_returns"]
+            assert target.value == expected
 
-    def test_load_business_income_targets(self, temp_db):
-        """Loading income sources should create business income targets."""
+    def test_load_state_local_refunds_targets(self, temp_db):
+        """Loading income sources should create state/local refunds targets."""
         with Session(temp_db) as session:
             load_soi_income_sources_targets(session, years=[2021])
 
@@ -192,19 +229,79 @@ class TestSoiIncomeSourcesETL:
                 select(Stratum).where(Stratum.name == "GA All Filers")
             ).first()
 
-            business_returns_target = session.exec(
+            target = session.exec(
                 select(Target)
                 .where(Target.stratum_id == ga_stratum.id)
-                .where(Target.variable == "business_income_returns")
+                .where(Target.variable == "state_local_refunds_amount")
                 .where(Target.period == 2021)
             ).first()
 
-            assert business_returns_target is not None
-            expected = SOI_INCOME_SOURCES_DATA[2021]["GA"]["business_income_returns"]
-            assert business_returns_target.value == expected
+            assert target is not None
+            expected = SOI_STATE_INCOME_SOURCES_DATA[2021]["GA"]["state_local_refunds_amount"]
+            assert target.value == expected
 
-    def test_load_soi_income_sources_stratum_has_state_constraint(self, temp_db):
-        """State strata should have state_fips constraint."""
+    def test_load_alimony_received_targets(self, temp_db):
+        """Loading income sources should create alimony received targets."""
+        with Session(temp_db) as session:
+            load_soi_income_sources_targets(session, years=[2021])
+
+            ma_stratum = session.exec(
+                select(Stratum).where(Stratum.name == "MA All Filers")
+            ).first()
+
+            target = session.exec(
+                select(Target)
+                .where(Target.stratum_id == ma_stratum.id)
+                .where(Target.variable == "alimony_received_returns")
+                .where(Target.period == 2021)
+            ).first()
+
+            assert target is not None
+            expected = SOI_STATE_INCOME_SOURCES_DATA[2021]["MA"]["alimony_received_returns"]
+            assert target.value == expected
+
+    def test_load_schedule_c_income_targets(self, temp_db):
+        """Loading income sources should create Schedule C business income targets."""
+        with Session(temp_db) as session:
+            load_soi_income_sources_targets(session, years=[2021])
+
+            il_stratum = session.exec(
+                select(Stratum).where(Stratum.name == "IL All Filers")
+            ).first()
+
+            target = session.exec(
+                select(Target)
+                .where(Target.stratum_id == il_stratum.id)
+                .where(Target.variable == "schedule_c_income_amount")
+                .where(Target.period == 2021)
+            ).first()
+
+            assert target is not None
+            expected = SOI_STATE_INCOME_SOURCES_DATA[2021]["IL"]["schedule_c_income_amount"]
+            assert target.value == expected
+
+    def test_load_rental_royalty_income_targets(self, temp_db):
+        """Loading income sources should create rental/royalty income targets."""
+        with Session(temp_db) as session:
+            load_soi_income_sources_targets(session, years=[2021])
+
+            pa_stratum = session.exec(
+                select(Stratum).where(Stratum.name == "PA All Filers")
+            ).first()
+
+            target = session.exec(
+                select(Target)
+                .where(Target.stratum_id == pa_stratum.id)
+                .where(Target.variable == "rental_royalty_income_returns")
+                .where(Target.period == 2021)
+            ).first()
+
+            assert target is not None
+            expected = SOI_STATE_INCOME_SOURCES_DATA[2021]["PA"]["rental_royalty_income_returns"]
+            assert target.value == expected
+
+    def test_load_partnership_scorp_income_targets(self, temp_db):
+        """Loading income sources should create partnership/S-corp income targets."""
         with Session(temp_db) as session:
             load_soi_income_sources_targets(session, years=[2021])
 
@@ -212,16 +309,36 @@ class TestSoiIncomeSourcesETL:
                 select(Stratum).where(Stratum.name == "OH All Filers")
             ).first()
 
+            target = session.exec(
+                select(Target)
+                .where(Target.stratum_id == oh_stratum.id)
+                .where(Target.variable == "partnership_scorp_income_amount")
+                .where(Target.period == 2021)
+            ).first()
+
+            assert target is not None
+            expected = SOI_STATE_INCOME_SOURCES_DATA[2021]["OH"]["partnership_scorp_income_amount"]
+            assert target.value == expected
+
+    def test_load_soi_income_sources_stratum_has_state_constraint(self, temp_db):
+        """State strata should have state_fips constraint."""
+        with Session(temp_db) as session:
+            load_soi_income_sources_targets(session, years=[2021])
+
+            nc_stratum = session.exec(
+                select(Stratum).where(Stratum.name == "NC All Filers")
+            ).first()
+
             # Check constraints include state_fips
             state_constraint = None
-            for constraint in oh_stratum.constraints:
+            for constraint in nc_stratum.constraints:
                 if constraint.variable == "state_fips":
                     state_constraint = constraint
                     break
 
             assert state_constraint is not None
             assert state_constraint.operator == "=="
-            assert state_constraint.value == STATE_FIPS["OH"]
+            assert state_constraint.value == STATE_FIPS["NC"]
 
     def test_load_soi_income_sources_stratum_has_parent(self, temp_db):
         """State strata should have national stratum as parent."""
@@ -232,14 +349,14 @@ class TestSoiIncomeSourcesETL:
                 select(Stratum).where(Stratum.name == "US All Filers")
             ).first()
 
-            il_stratum = session.exec(
-                select(Stratum).where(Stratum.name == "IL All Filers")
+            mi_stratum = session.exec(
+                select(Stratum).where(Stratum.name == "MI All Filers")
             ).first()
 
-            assert il_stratum.parent_id == national.id
+            assert mi_stratum.parent_id == national.id
 
     def test_load_soi_income_sources_idempotent(self, temp_db):
-        """Loading income sources twice should not duplicate data."""
+        """Loading income sources twice should not duplicate strata."""
         with Session(temp_db) as session:
             load_soi_income_sources_targets(session, years=[2021])
             load_soi_income_sources_targets(session, years=[2021])
@@ -256,7 +373,7 @@ class TestSoiIncomeSourcesETL:
         with Session(temp_db) as session:
             load_soi_income_sources_targets(session, years=[2021])
 
-            # 5 income sources x 2 (returns + amount) = 10 targets per state
+            # 11 income sources x 2 (returns + amount) = 22 targets per state
             expected_targets_per_state = len(INCOME_SOURCES) * 2
 
             for state_abbrev in STATE_FIPS.keys():
@@ -287,21 +404,27 @@ class TestSoiIncomeSourcesETL:
             target = session.exec(
                 select(Target)
                 .where(Target.stratum_id == ca_stratum.id)
-                .where(Target.variable == "wages_returns")
+                .where(Target.variable == "taxable_interest_returns")
             ).first()
 
             assert target.source == DataSource.IRS_SOI
-            assert target.source_table == "AGI Percentile Data by State"
-            assert "adjusted-gross-income" in target.source_url
+            assert target.source_table == "Individual Income Tax State Data"
+            assert "individual-income-tax-statistics" in target.source_url
 
     def test_income_sources_list(self):
-        """INCOME_SOURCES should include expected income types."""
+        """INCOME_SOURCES should include all expected income types."""
         expected_sources = [
-            "wages",
-            "dividends",
-            "interest",
-            "capital_gains",
-            "business_income",
+            "taxable_interest",
+            "tax_exempt_interest",
+            "ordinary_dividends",
+            "qualified_dividends",
+            "short_term_capital_gains",
+            "long_term_capital_gains",
+            "state_local_refunds",
+            "alimony_received",
+            "schedule_c_income",
+            "rental_royalty_income",
+            "partnership_scorp_income",
         ]
         assert INCOME_SOURCES == expected_sources
 
@@ -310,48 +433,21 @@ class TestSoiIncomeSourcesETL:
         with Session(temp_db) as session:
             load_soi_income_sources_targets(session, years=[2021])
 
-            # Sum all wages returns across states
-            all_wages_returns = sum(
-                state_data["wages_returns"]
-                for state_data in SOI_INCOME_SOURCES_DATA[2021].values()
-            )
-            # Most returns have wages - should be ~120M+ nationally
-            assert 100_000_000 < all_wages_returns < 200_000_000
+            # Check national taxable interest returns - should be ~55M
+            national_data = SOI_NATIONAL_INCOME_SOURCES_DATA[2021]
+            assert 40_000_000 < national_data["taxable_interest_returns"] < 80_000_000
 
-            # Sum all wages amounts across states
-            all_wages_amount = sum(
-                state_data["wages_amount"]
-                for state_data in SOI_INCOME_SOURCES_DATA[2021].values()
-            )
-            # Total wages nationally should be ~$8-10 trillion
-            assert 7_000_000_000_000 < all_wages_amount < 12_000_000_000_000
+            # Check national long-term capital gains - should be ~$850B
+            assert 500_000_000_000 < national_data["long_term_capital_gains_amount"] < 1_500_000_000_000
 
-            # Dividends should be much less common than wages
-            all_dividends_returns = sum(
-                state_data["dividends_returns"]
-                for state_data in SOI_INCOME_SOURCES_DATA[2021].values()
-            )
-            assert all_dividends_returns < all_wages_returns
+            # Alimony should be much lower than other income sources
+            assert national_data["alimony_received_returns"] < national_data["taxable_interest_returns"]
 
-    def test_large_states_have_higher_income(self, temp_db):
-        """Larger states should have more income than smaller states."""
-        with Session(temp_db) as session:
-            load_soi_income_sources_targets(session, years=[2021])
-
-            # California (large) vs Wyoming (small)
-            ca_data = SOI_INCOME_SOURCES_DATA[2021]["CA"]
-            wy_data = SOI_INCOME_SOURCES_DATA[2021]["WY"]
-
-            assert ca_data["wages_returns"] > wy_data["wages_returns"]
-            assert ca_data["wages_amount"] > wy_data["wages_amount"]
-            assert ca_data["dividends_amount"] > wy_data["dividends_amount"]
-
-            # Texas (large) vs Vermont (small)
-            tx_data = SOI_INCOME_SOURCES_DATA[2021]["TX"]
-            vt_data = SOI_INCOME_SOURCES_DATA[2021]["VT"]
-
-            assert tx_data["wages_returns"] > vt_data["wages_returns"]
-            assert tx_data["wages_amount"] > vt_data["wages_amount"]
+    def test_qualified_dividends_less_than_ordinary(self, temp_db):
+        """Qualified dividends should always be less than or equal to ordinary dividends."""
+        for state_data in SOI_STATE_INCOME_SOURCES_DATA[2021].values():
+            assert state_data["qualified_dividends_returns"] <= state_data["ordinary_dividends_returns"]
+            assert state_data["qualified_dividends_amount"] <= state_data["ordinary_dividends_amount"]
 
 
 class TestIncomeSourcesData:
@@ -359,29 +455,21 @@ class TestIncomeSourcesData:
 
     def test_all_states_have_data(self):
         """All 50 states + DC should have income sources data."""
-        assert len(SOI_INCOME_SOURCES_DATA[2021]) == 51
+        assert len(SOI_STATE_INCOME_SOURCES_DATA[2021]) == 51
 
         for state_abbrev in STATE_FIPS.keys():
-            assert state_abbrev in SOI_INCOME_SOURCES_DATA[2021], (
+            assert state_abbrev in SOI_STATE_INCOME_SOURCES_DATA[2021], (
                 f"Missing data for {state_abbrev}"
             )
 
     def test_all_income_sources_present(self):
         """Each state should have all income source variables."""
-        expected_vars = [
-            "wages_returns",
-            "wages_amount",
-            "dividends_returns",
-            "dividends_amount",
-            "interest_returns",
-            "interest_amount",
-            "capital_gains_returns",
-            "capital_gains_amount",
-            "business_income_returns",
-            "business_income_amount",
-        ]
+        expected_vars = []
+        for source in INCOME_SOURCES:
+            expected_vars.append(f"{source}_returns")
+            expected_vars.append(f"{source}_amount")
 
-        for state_abbrev, state_data in SOI_INCOME_SOURCES_DATA[2021].items():
+        for state_abbrev, state_data in SOI_STATE_INCOME_SOURCES_DATA[2021].items():
             for var in expected_vars:
                 assert var in state_data, (
                     f"Missing {var} for {state_abbrev}"
@@ -391,24 +479,40 @@ class TestIncomeSourcesData:
                 )
 
     def test_values_are_positive(self):
-        """All values should be positive."""
-        for state_abbrev, state_data in SOI_INCOME_SOURCES_DATA[2021].items():
+        """All values should be positive (or zero for some edge cases)."""
+        for state_abbrev, state_data in SOI_STATE_INCOME_SOURCES_DATA[2021].items():
             for var, value in state_data.items():
                 assert value >= 0, (
                     f"Negative value for {var} in {state_abbrev}: {value}"
                 )
 
-    def test_returns_less_than_total_returns(self):
-        """Returns reporting each income source should be reasonable."""
-        # Check a few states that returns reporting any income source
-        # are not impossibly high
-        for state_abbrev, state_data in SOI_INCOME_SOURCES_DATA[2021].items():
-            # Wages returns should be less than 20M even for largest states
-            assert state_data["wages_returns"] < 20_000_000, (
-                f"Wages returns too high for {state_abbrev}"
-            )
-            # Dividends returns should be less than wages returns
-            # (not everyone has dividends)
-            assert state_data["dividends_returns"] <= state_data["wages_returns"], (
-                f"Dividends returns > wages returns for {state_abbrev}"
-            )
+    def test_large_states_have_higher_values(self):
+        """Larger states should have more income than smaller states."""
+        # California (large) vs Wyoming (small)
+        ca_data = SOI_STATE_INCOME_SOURCES_DATA[2021]["CA"]
+        wy_data = SOI_STATE_INCOME_SOURCES_DATA[2021]["WY"]
+
+        assert ca_data["taxable_interest_returns"] > wy_data["taxable_interest_returns"]
+        assert ca_data["ordinary_dividends_amount"] > wy_data["ordinary_dividends_amount"]
+        assert ca_data["long_term_capital_gains_amount"] > wy_data["long_term_capital_gains_amount"]
+        assert ca_data["schedule_c_income_amount"] > wy_data["schedule_c_income_amount"]
+
+        # Texas (large) vs Vermont (small)
+        tx_data = SOI_STATE_INCOME_SOURCES_DATA[2021]["TX"]
+        vt_data = SOI_STATE_INCOME_SOURCES_DATA[2021]["VT"]
+
+        assert tx_data["taxable_interest_returns"] > vt_data["taxable_interest_returns"]
+        assert tx_data["partnership_scorp_income_amount"] > vt_data["partnership_scorp_income_amount"]
+
+    def test_national_data_structure(self):
+        """National data should have all required fields."""
+        national_data = SOI_NATIONAL_INCOME_SOURCES_DATA[2021]
+
+        for source in INCOME_SOURCES:
+            returns_var = f"{source}_returns"
+            amount_var = f"{source}_amount"
+
+            assert returns_var in national_data, f"Missing {returns_var} in national data"
+            assert amount_var in national_data, f"Missing {amount_var} in national data"
+            assert isinstance(national_data[returns_var], int)
+            assert isinstance(national_data[amount_var], int)

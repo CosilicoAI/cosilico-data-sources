@@ -41,6 +41,7 @@ class DataSource(str, Enum):
     SSA = "ssa"
     BLS = "bls"
     CMS_MEDICAID = "cms-medicaid"
+    CMS_ACA = "cms-aca"  # ACA Marketplace enrollment data
     CBO = "cbo"  # Congressional Budget Office projections
 
     # UK sources
@@ -56,6 +57,17 @@ class TargetType(str, Enum):
     COUNT = "count"
     AMOUNT = "amount"
     RATE = "rate"
+
+
+class GeographicLevel(str, Enum):
+    """Geographic aggregation levels for targets."""
+
+    NATIONAL = "national"
+    STATE = "state"
+    CONGRESSIONAL_DISTRICT = "congressional_district"
+    COUNTY = "county"
+    ZIP_CODE = "zip_code"
+    METRO_AREA = "metro_area"
 
 
 class Stratum(SQLModel, table=True):
@@ -143,6 +155,11 @@ class Target(SQLModel, table=True):
     period: int = Field(index=True, description="Year")
     value: float
     target_type: TargetType = Field(default=TargetType.COUNT)
+
+    # Geographic level for this target
+    geographic_level: Optional[GeographicLevel] = Field(
+        default=None, index=True, description="Geographic aggregation level"
+    )
 
     source: DataSource
     source_table: Optional[str] = None  # e.g., "Table 1.1"
