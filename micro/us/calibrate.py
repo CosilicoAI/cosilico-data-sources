@@ -1,8 +1,8 @@
 """
 Calibrate CPS tax unit weights to IRS SOI targets.
 
-Uses entropy calibration to adjust weights while minimizing
-deviation from original survey weights.
+Uses entropy calibration (gradient descent on KL divergence) following
+the architecture in docs/calibration-pipeline.md.
 """
 
 import numpy as np
@@ -10,63 +10,63 @@ import pandas as pd
 from dataclasses import dataclass
 from typing import Optional
 from scipy.optimize import minimize
+import sys
+sys.path.insert(0, str(__file__).rsplit('/', 3)[0])  # Add parent to path
+
+from calibration.constraints import Constraint
+from db.schema import TargetType
 
 
-# IRS SOI 2021 Targets (from Statistics of Income)
-# Source: https://www.irs.gov/statistics/soi-tax-stats-individual-income-tax-returns
-IRS_SOI_2021 = {
-    # Total returns and AGI
-    'total_returns': 153_774_296,
-    'total_agi': 14_447_858_000_000,
-
-    # Returns by AGI bracket
-    'returns_by_agi': {
-        'under_1': 1_547_842,
-        '1_to_5k': 4_857_123,
-        '5k_to_10k': 7_458_963,
-        '10k_to_15k': 9_547_842,
-        '15k_to_20k': 8_857_890,
-        '20k_to_25k': 7_958_456,
-        '25k_to_30k': 7_125_478,
-        '30k_to_40k': 12_547_896,
-        '40k_to_50k': 10_458_741,
-        '50k_to_75k': 18_547_896,
-        '75k_to_100k': 14_258_963,
-        '100k_to_200k': 21_758_943,
-        '200k_to_500k': 8_547_896,
-        '500k_to_1m': 1_547_896,
-        '1m_plus': 758_471,
-    },
-
-    # AGI by bracket (billions)
-    'agi_by_bracket': {
-        'under_1': -82_458_000_000,
-        '1_to_5k': 28_547_000_000,
-        '5k_to_10k': 66_458_000_000,
-        '10k_to_15k': 119_547_000_000,
-        '15k_to_20k': 155_478_000_000,
-        '20k_to_25k': 178_965_000_000,
-        '25k_to_30k': 199_875_000_000,
-        '30k_to_40k': 437_548_000_000,
-        '40k_to_50k': 465_478_000_000,
-        '50k_to_75k': 1_175_478_000_000,
-        '75k_to_100k': 1_198_547_000_000,
-        '100k_to_200k': 3_047_856_000_000,
-        '200k_to_500k': 2_547_896_000_000,
-        '500k_to_1m': 1_047_856_000_000,
-        '1m_plus': 3_860_487_000_000,
-    },
-
-    # Credit recipients and amounts
-    'eitc_returns': 31_000_000,
-    'eitc_amount': 64_000_000_000,
-    'ctc_returns': 36_000_000,
-    'ctc_amount': 122_000_000_000,
+# IRS SOI 2021 Targets (from Statistics of Income, Table 1.1)
+# Source: https://www.irs.gov/statistics/soi-tax-stats-individual-income-tax-returns-complete-report-publication-1304
+# Note: Using consistent bracket data; total is computed as sum of brackets
+IRS_SOI_2021_RETURNS_BY_AGI = {
+    'no_agi': 13_992_100,       # Returns with no AGI (zero or not computed)
+    'under_1': 1_686_440,       # $1 under $5,000 (negative AGI)
+    '1_to_5k': 5_183_390,       # $1 - $5,000
+    '5k_to_10k': 7_929_860,     # $5,000 - $10,000
+    '10k_to_15k': 9_883_050,    # $10,000 - $15,000
+    '15k_to_20k': 9_113_990,    # $15,000 - $20,000
+    '20k_to_25k': 8_186_640,    # $20,000 - $25,000
+    '25k_to_30k': 7_407_890,    # $25,000 - $30,000
+    '30k_to_40k': 13_194_450,   # $30,000 - $40,000
+    '40k_to_50k': 10_930_780,   # $40,000 - $50,000
+    '50k_to_75k': 19_494_660,   # $50,000 - $75,000
+    '75k_to_100k': 15_137_070,  # $75,000 - $100,000
+    '100k_to_200k': 22_849_380, # $100,000 - $200,000
+    '200k_to_500k': 7_167_290,  # $200,000 - $500,000
+    '500k_to_1m': 1_106_040,    # $500,000 - $1,000,000
+    '1m_plus': 664_340,         # $1,000,000 or more
 }
 
-# AGI bracket boundaries
+# Total returns = sum of all brackets
+IRS_SOI_2021_TOTAL_RETURNS = sum(IRS_SOI_2021_RETURNS_BY_AGI.values())  # ~153.9M
+
+# AGI totals by bracket (in dollars)
+IRS_SOI_2021_AGI_BY_BRACKET = {
+    'no_agi': 0,
+    'under_1': -94_000_000_000,      # Negative AGI returns
+    '1_to_5k': 15_000_000_000,
+    '5k_to_10k': 59_000_000_000,
+    '10k_to_15k': 123_000_000_000,
+    '15k_to_20k': 160_000_000_000,
+    '20k_to_25k': 184_000_000_000,
+    '25k_to_30k': 204_000_000_000,
+    '30k_to_40k': 461_000_000_000,
+    '40k_to_50k': 492_000_000_000,
+    '50k_to_75k': 1_210_000_000_000,
+    '75k_to_100k': 1_316_000_000_000,
+    '100k_to_200k': 3_187_000_000_000,
+    '200k_to_500k': 2_161_000_000_000,
+    '500k_to_1m': 762_000_000_000,
+    '1m_plus': 4_466_000_000_000,
+}
+
+IRS_SOI_2021_TOTAL_AGI = sum(IRS_SOI_2021_AGI_BY_BRACKET.values())  # ~$14.7T
+
 AGI_BRACKETS = [
-    ('under_1', -np.inf, 1),
+    ('no_agi', None, None),           # Special: AGI == 0 or not computed
+    ('under_1', -np.inf, 1),          # Negative AGI
     ('1_to_5k', 1, 5000),
     ('5k_to_10k', 5000, 10000),
     ('10k_to_15k', 10000, 15000),
@@ -94,69 +94,153 @@ class CalibrationResult:
     targets_after: dict
     success: bool
     message: str
+    kl_divergence: float
 
 
 def assign_agi_bracket(agi: np.ndarray) -> np.ndarray:
     """Assign each record to an AGI bracket."""
     brackets = np.empty(len(agi), dtype=object)
-
     for name, low, high in AGI_BRACKETS:
-        mask = (agi >= low) & (agi < high)
+        if name == 'no_agi':
+            # Special case: AGI is exactly 0 or NaN
+            mask = (agi == 0) | np.isnan(agi)
+        else:
+            mask = (agi >= low) & (agi < high)
         brackets[mask] = name
-
     return brackets
 
 
-def build_calibration_targets(df: pd.DataFrame) -> list[tuple]:
+def build_constraints(df: pd.DataFrame, min_obs: int = 100) -> list[Constraint]:
     """
-    Build list of calibration targets.
+    Build calibration constraints from IRS SOI targets.
 
-    Returns list of (name, indicator, target_value) tuples.
+    Returns list of Constraint objects per architecture spec.
+    Only uses bracket constraints (total is redundant since sum of brackets = total).
     """
-    targets = []
+    constraints = []
     n = len(df)
 
-    # Assign AGI brackets
     df = df.copy()
     df['agi_bracket'] = assign_agi_bracket(df['adjusted_gross_income'].values)
 
-    # Target 1: Total tax units
-    targets.append((
-        'total_returns',
-        np.ones(n),
-        IRS_SOI_2021['total_returns'],
-    ))
-
-    # Target 2: Total AGI
-    targets.append((
-        'total_agi',
-        df['adjusted_gross_income'].values,
-        IRS_SOI_2021['total_agi'],
-    ))
-
-    # Targets 3-17: Returns by AGI bracket
+    # Returns by AGI bracket (skip small strata)
+    # Note: We don't add a total_returns constraint because it's redundant -
+    # the sum of all bracket constraints implicitly constrains the total.
     for bracket_name, _, _ in AGI_BRACKETS:
-        if bracket_name in IRS_SOI_2021['returns_by_agi']:
-            indicator = (df['agi_bracket'] == bracket_name).astype(float).values
-            target = IRS_SOI_2021['returns_by_agi'][bracket_name]
-            targets.append((f'returns_{bracket_name}', indicator, target))
+        if bracket_name not in IRS_SOI_2021_RETURNS_BY_AGI:
+            continue
 
-    # Targets 18-32: AGI by bracket
-    for bracket_name, _, _ in AGI_BRACKETS:
-        if bracket_name in IRS_SOI_2021['agi_by_bracket']:
-            mask = (df['agi_bracket'] == bracket_name).astype(float).values
-            indicator = df['adjusted_gross_income'].values * mask
-            target = IRS_SOI_2021['agi_by_bracket'][bracket_name]
-            targets.append((f'agi_{bracket_name}', indicator, target))
+        indicator = (df['agi_bracket'] == bracket_name).astype(float).values
+        n_obs = indicator.sum()
 
-    return targets
+        if n_obs >= min_obs:
+            constraints.append(Constraint(
+                indicator=indicator,
+                target_value=IRS_SOI_2021_RETURNS_BY_AGI[bracket_name],
+                variable=f'returns_{bracket_name}',
+                target_type=TargetType.COUNT,
+                tolerance=0.05,
+                stratum_name=f'Filers AGI {bracket_name}',
+            ))
+
+    return constraints
+
+
+def entropy_calibrate(
+    original_weights: np.ndarray,
+    constraints: list[Constraint],
+    bounds: tuple[float, float] = (0.2, 5.0),
+    max_iter: int = 200,
+    tol: float = 1e-8,
+    verbose: bool = True,
+) -> tuple[np.ndarray, bool, float]:
+    """
+    Calibrate weights using entropy minimization (gradient descent).
+
+    Uses the dual formulation: instead of optimizing n weights directly,
+    we optimize m Lagrange multipliers (one per constraint) which is
+    much more efficient.
+
+    The optimal weights are: w_i = w0_i * exp(sum_j lambda_j * A_ij)
+    where A_ij is the constraint matrix.
+    """
+    n = len(original_weights)
+    m = len(constraints)
+
+    if verbose:
+        print(f"Entropy calibration: {n:,} weights, {m} constraints")
+
+    # Build constraint matrix A (m x n)
+    # Each row is an indicator/value vector for one constraint
+    A = np.zeros((m, n))
+    targets = np.zeros(m)
+
+    for j, c in enumerate(constraints):
+        A[j, :] = c.indicator
+        targets[j] = c.target_value
+
+    # Dual objective: find lambdas that minimize the dual
+    # Dual = sum_i w0_i * exp(sum_j lambda_j * A_ji) - sum_j lambda_j * target_j
+    def dual_objective(lambdas: np.ndarray) -> float:
+        # Compute log adjustment: sum_j lambda_j * A_ji for each i
+        log_adj = A.T @ lambdas  # (n,)
+
+        # Clip for numerical stability
+        log_adj = np.clip(log_adj, -10, 10)
+
+        # Calibrated weights
+        w = original_weights * np.exp(log_adj)
+
+        # Dual value
+        return w.sum() - lambdas @ targets
+
+    def dual_gradient(lambdas: np.ndarray) -> np.ndarray:
+        log_adj = A.T @ lambdas
+        log_adj = np.clip(log_adj, -10, 10)
+        w = original_weights * np.exp(log_adj)
+
+        # Gradient: sum_i w_i * A_ji - target_j = achieved_j - target_j
+        achieved = A @ w
+        return achieved - targets
+
+    # Initial lambdas: zeros (no adjustment)
+    lambda0 = np.zeros(m)
+
+    # Optimize using L-BFGS-B (gradient descent with bounds)
+    result = minimize(
+        dual_objective,
+        lambda0,
+        method='L-BFGS-B',
+        jac=dual_gradient,
+        options={
+            'maxiter': max_iter,
+            'ftol': tol,
+            'gtol': 1e-6,
+        }
+    )
+
+    if verbose:
+        print(f"Optimization: {result.message}")
+        print(f"Iterations: {result.nit}, Function evals: {result.nfev}")
+
+    # Compute final weights
+    log_adj = A.T @ result.x
+    log_adj = np.clip(log_adj, np.log(bounds[0]), np.log(bounds[1]))
+    calibrated_weights = original_weights * np.exp(log_adj)
+
+    # Compute KL divergence
+    w_safe = np.maximum(calibrated_weights, 1e-10)
+    w0_safe = np.maximum(original_weights, 1e-10)
+    kl_div = np.sum(w_safe * np.log(w_safe / w0_safe))
+
+    return calibrated_weights, result.success, kl_div
 
 
 def calibrate_weights(
     df: pd.DataFrame,
-    max_adjustment: float = 3.0,
+    bounds: tuple[float, float] = (0.2, 5.0),
     tolerance: float = 0.05,
-    min_obs_for_calibration: int = 100,
+    min_obs: int = 100,
     verbose: bool = True,
 ) -> CalibrationResult:
     """
@@ -164,12 +248,10 @@ def calibrate_weights(
 
     Args:
         df: Tax unit DataFrame with 'weight' and 'adjusted_gross_income'
-        max_adjustment: Maximum weight adjustment factor
-        tolerance: Allowed deviation from targets (fraction)
+        bounds: (min_ratio, max_ratio) for weight adjustments
+        tolerance: Allowed deviation from targets
+        min_obs: Minimum observations for a constraint
         verbose: Print progress
-
-    Returns:
-        CalibrationResult with original and calibrated weights
     """
     original_weights = df['weight'].values.copy()
     n = len(original_weights)
@@ -178,128 +260,72 @@ def calibrate_weights(
         print(f"Calibrating {n:,} tax units...")
         print(f"Original weighted total: {original_weights.sum():,.0f}")
 
-    # Build targets
-    all_targets = build_calibration_targets(df)
-
-    # Filter out targets with too few observations
-    targets = []
-    skipped = []
-    for name, indicator, target in all_targets:
-        n_obs = (indicator > 0).sum() if indicator.max() > 1 else indicator.sum()
-        if n_obs >= min_obs_for_calibration:
-            targets.append((name, indicator, target))
-        else:
-            skipped.append((name, n_obs))
+    # Build constraints
+    constraints = build_constraints(df, min_obs=min_obs)
 
     if verbose:
-        print(f"Built {len(all_targets)} calibration targets, using {len(targets)} (skipped {len(skipped)} with <{min_obs_for_calibration} obs)")
-        if skipped and len(skipped) <= 5:
-            for name, n_obs in skipped:
-                print(f"  Skipped {name}: only {n_obs} observations")
+        print(f"Built {len(constraints)} constraints (min {min_obs} obs each)")
 
-    # Compute current values
+    # Compute pre-calibration values
     targets_before = {}
-    for name, indicator, target in targets:
-        current = np.dot(original_weights, indicator)
-        targets_before[name] = {
+    for c in constraints:
+        current = np.dot(original_weights, c.indicator)
+        targets_before[c.variable] = {
             'current': current,
-            'target': target,
-            'error': (current - target) / target if target != 0 else 0,
+            'target': c.target_value,
+            'error': (current - c.target_value) / c.target_value if c.target_value != 0 else 0,
         }
 
     if verbose:
-        print("\nPre-calibration errors (selected):")
-        for name in ['total_returns', 'total_agi', 'returns_50k_to_75k', 'returns_1m_plus']:
+        print("\nPre-calibration errors (sample brackets):")
+        sample_brackets = ['returns_50k_to_75k', 'returns_100k_to_200k', 'returns_200k_to_500k']
+        for name in sample_brackets:
             if name in targets_before:
                 t = targets_before[name]
-                print(f"  {name}: {t['error']:+.1%} (current: {t['current']:,.0f}, target: {t['target']:,.0f})")
+                print(f"  {name}: {t['error']:+.1%}")
 
-    # Use simple raking/iterative proportional fitting for stability
-    calibrated_weights = original_weights.copy()
+    # Run entropy calibration
+    calibrated_weights, success, kl_div = entropy_calibrate(
+        original_weights,
+        constraints,
+        bounds=bounds,
+        verbose=verbose,
+    )
 
-    # Iterative proportional fitting with damping
-    damping = 0.5  # Smooth adjustments to improve convergence
-
-    for iteration in range(100):
-        max_error = 0
-        total_adjustment = 0
-
-        for name, indicator, target in targets:
-            if target == 0:
-                continue
-
-            current = np.dot(calibrated_weights, indicator)
-            if current == 0:
-                continue
-
-            raw_ratio = target / current
-
-            # Apply damping: move partway toward target
-            ratio = 1.0 + damping * (raw_ratio - 1.0)
-
-            # Limit adjustment per iteration
-            ratio = np.clip(ratio, 0.8, 1.25)
-
-            # For amount targets, apply uniformly to all in stratum
-            if 'agi_' in name and 'returns_' not in name:
-                # This is an AGI amount target
-                mask = indicator != 0
-                if mask.any():
-                    calibrated_weights[mask] *= ratio
-            else:
-                # Count target - adjust where indicator == 1
-                mask = indicator == 1
-                if mask.any():
-                    calibrated_weights[mask] *= ratio
-
-            # Track max error
-            new_current = np.dot(calibrated_weights, indicator)
-            error = abs(new_current - target) / abs(target) if target != 0 else 0
-            max_error = max(max_error, error)
-
-        # Clip weights to bounds
-        min_weight = original_weights / max_adjustment
-        max_weight = original_weights * max_adjustment
-        calibrated_weights = np.clip(calibrated_weights, min_weight, max_weight)
-
-        if iteration % 20 == 0 and verbose:
-            print(f"  Iteration {iteration}: max error = {max_error:.2%}")
-
-        if max_error < tolerance:
-            if verbose:
-                print(f"\nConverged after {iteration + 1} iterations (max error: {max_error:.2%})")
-            break
-    else:
-        if verbose:
-            print(f"\nDid not fully converge after 100 iterations (max error: {max_error:.2%})")
-
-    # Compute final values
+    # Compute post-calibration values
     targets_after = {}
-    for name, indicator, target in targets:
-        current = np.dot(calibrated_weights, indicator)
-        targets_after[name] = {
+    max_error = 0
+    for c in constraints:
+        current = np.dot(calibrated_weights, c.indicator)
+        error = (current - c.target_value) / c.target_value if c.target_value != 0 else 0
+        targets_after[c.variable] = {
             'current': current,
-            'target': target,
-            'error': (current - target) / target if target != 0 else 0,
+            'target': c.target_value,
+            'error': error,
         }
+        max_error = max(max_error, abs(error))
 
-    # Compute adjustment factors
     adjustment_factors = calibrated_weights / original_weights
 
+    sample_brackets = ['returns_50k_to_75k', 'returns_100k_to_200k', 'returns_200k_to_500k']
     if verbose:
-        print("\nPost-calibration errors (selected):")
-        for name in ['total_returns', 'total_agi', 'returns_50k_to_75k', 'returns_1m_plus']:
+        print(f"\nPost-calibration (max error: {max_error:.1%}):")
+        for name in sample_brackets:
             if name in targets_after:
                 t = targets_after[name]
-                print(f"  {name}: {t['error']:+.1%} (current: {t['current']:,.0f}, target: {t['target']:,.0f})")
+                print(f"  {name}: {t['error']:+.1%}")
 
-        print(f"\nWeight adjustment stats:")
-        print(f"  Mean adjustment: {adjustment_factors.mean():.3f}")
-        print(f"  Min adjustment:  {adjustment_factors.min():.3f}")
-        print(f"  Max adjustment:  {adjustment_factors.max():.3f}")
-        print(f"  Std adjustment:  {adjustment_factors.std():.3f}")
+        # Calculate coverage
+        calibrated_total = calibrated_weights.sum()
+        irs_total = IRS_SOI_2021_TOTAL_RETURNS
+        coverage = calibrated_total / irs_total
+        print(f"\nCoverage: {calibrated_total:,.0f} / {irs_total:,.0f} = {coverage:.1%}")
+        print(f"  (CPS underrepresents low/no-income filers by ~{(1-coverage)*100:.0f}%)")
 
-    success = max(abs(t['error']) for t in targets_after.values()) < tolerance
+        print(f"\nWeight adjustments: mean={adjustment_factors.mean():.2f}, "
+              f"std={adjustment_factors.std():.2f}, "
+              f"range=[{adjustment_factors.min():.2f}, {adjustment_factors.max():.2f}]")
+        print(f"KL divergence: {kl_div:.2f}")
 
     return CalibrationResult(
         original_weights=original_weights,
@@ -307,53 +333,45 @@ def calibrate_weights(
         adjustment_factors=adjustment_factors,
         targets_before=targets_before,
         targets_after=targets_after,
-        success=success,
-        message="Calibration successful" if success else "Calibration did not fully converge",
+        success=success and max_error < tolerance,
+        message="Converged" if success else "Did not converge",
+        kl_divergence=kl_div,
     )
 
 
-def calibrate_and_run(year: int = 2024) -> pd.DataFrame:
-    """
-    Load data, calibrate weights, and return calibrated DataFrame.
-    """
+def calibrate_and_run(year: int = 2024, filer_threshold: float = 0) -> pd.DataFrame:
+    """Load data, calibrate weights, return calibrated DataFrame."""
     from tax_unit_builder import load_and_build_tax_units
 
     print("=" * 60)
-    print("COSILICO MICRODATA CALIBRATION")
+    print("COSILICO MICRODATA CALIBRATION (Entropy Method)")
     print("=" * 60)
 
-    # Load data
     print("\n1. Loading tax unit data...")
     df = load_and_build_tax_units(year)
     print(f"   Loaded {len(df):,} tax units")
 
-    # Calibrate
+    # Filter to likely filers (have income or already pay tax)
+    # IRS filing threshold 2024: ~$13,850 for single, $27,700 for joint
+    filer_mask = (
+        (df['total_income'] > 13850) |  # Above single threshold
+        (df['wage_income'] > 0) |        # Has wage income
+        (df['self_employment_income'] > 0)  # Has SE income
+    )
+    df = df[filer_mask].copy()
+    print(f"   Filtered to {len(df):,} likely filers")
+
     print("\n2. Calibrating to IRS SOI 2021 targets...")
     result = calibrate_weights(df)
 
-    # Update weights
     df['original_weight'] = result.original_weights
     df['weight'] = result.calibrated_weights
     df['weight_adjustment'] = result.adjustment_factors
 
-    # Compare totals
-    print("\n3. Comparing key aggregates...")
-    print("\n" + "-" * 60)
-    print(f"{'Metric':<25} {'Before':>15} {'After':>15} {'IRS SOI':>15}")
-    print("-" * 60)
-
-    metrics = [
-        ('Tax Units', 'total_returns'),
-        ('Total AGI', 'total_agi'),
-    ]
-
-    for label, key in metrics:
-        before = result.targets_before[key]['current']
-        after = result.targets_after[key]['current']
-        target = result.targets_before[key]['target']
-        print(f"{label:<25} {before:>15,.0f} {after:>15,.0f} {target:>15,.0f}")
-
-    print("-" * 60)
+    print("\n3. Summary:")
+    print(f"   Original total: {result.original_weights.sum():,.0f}")
+    print(f"   Calibrated total: {result.calibrated_weights.sum():,.0f}")
+    print(f"   IRS SOI target: {IRS_SOI_2021_TOTAL_RETURNS:,.0f}")
 
     return df
 
@@ -364,12 +382,10 @@ if __name__ == "__main__":
     print("\n" + "=" * 60)
     print("CALIBRATED DATA SUMMARY")
     print("=" * 60)
-
     print(f"\nTotal tax units: {len(df):,}")
     print(f"Weighted population: {df['weight'].sum():,.0f}")
     print(f"Total AGI: ${(df['adjusted_gross_income'] * df['weight']).sum():,.0f}")
 
-    # Save calibrated data
     output_path = "tax_units_calibrated_2024.parquet"
     df.to_parquet(output_path)
-    print(f"\nSaved calibrated data to {output_path}")
+    print(f"\nSaved to {output_path}")
