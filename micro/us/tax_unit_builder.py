@@ -98,11 +98,15 @@ def _process_tax_unit(group: pd.DataFrame, tu_id: int, year: int) -> dict:
 
     # Head's age (for additional standard deduction)
     head_age = head['age']
+
+    # Geography (state FIPS from head)
+    state_fips = head.get('state_fips', 0)
     spouse_age = spouse['age'] if spouse is not None else None
 
     return {
         'tax_unit_id': tu_id,
         'weight': weight,
+        'state_fips': state_fips,
         'filing_status': filing_status,
         'head_age': head_age,
         'spouse_age': spouse_age,

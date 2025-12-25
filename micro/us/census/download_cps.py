@@ -157,6 +157,17 @@ def extract_cps_variables(
     # Read from cache
     person = pd.read_parquet(person_path)
 
+    # Merge household data for geography (GESTFIPS is in household file)
+    household_path = cache_dir / "household.parquet"
+    if household_path.exists():
+        household = pd.read_parquet(household_path, columns=["H_SEQ", "GESTFIPS", "GEDIV", "GEREG"])
+        # Merge on household ID (PH_SEQ in person = H_SEQ in household)
+        person = person.merge(
+            household.rename(columns={"H_SEQ": "PH_SEQ"}),
+            on="PH_SEQ",
+            how="left"
+        )
+
     # Select and rename columns
     available = [c for c in columns.keys() if c in person.columns]
     missing = [c for c in columns.keys() if c not in person.columns]
@@ -221,6 +232,8 @@ PERSON_COLUMNS = {
     "OI_VAL": "other_income",
     "PTOTVAL": "total_person_income",
     "PEARNVAL": "total_earnings",
+    # Geography
+    "GESTFIPS": "state_fips",
     # Tax/benefit validation targets (from TAXSIM)
     "FEDTAX_AC": "federal_tax",
     "FICA": "fica_tax",
