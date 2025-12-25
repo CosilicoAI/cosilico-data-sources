@@ -1,0 +1,342 @@
+"""
+Run Cosilico encodings on CPS microdata.
+
+Applies statute-based tax calculations to tax unit data.
+"""
+
+import numpy as np
+import pandas as pd
+from pathlib import Path
+
+
+# 2024 Tax Parameters (from Rev. Proc. 2023-34)
+PARAMS_2024 = {
+    # EITC parameters
+    'eitc': {
+        'max_credit': {0: 632, 1: 3995, 2: 6604, 3: 7430},
+        'earned_income_threshold': {0: 7840, 1: 11750, 2: 16510, 3: 16510},
+        'phaseout_start': {
+            'single': {0: 9800, 1: 21560, 2: 21560, 3: 21560},
+            'joint': {0: 16370, 1: 28120, 2: 28120, 3: 28120},
+        },
+        'phaseout_rate': {0: 0.0765, 1: 0.1598, 2: 0.2106, 3: 0.2106},
+        'investment_income_limit': 11600,
+    },
+
+    # CTC parameters
+    'ctc': {
+        'credit_per_child': 2000,
+        'credit_per_other_dependent': 500,
+        'phaseout_threshold_joint': 400000,
+        'phaseout_threshold_single': 200000,
+        'phaseout_rate': 50,  # $50 per $1000
+        'refundable_max_per_child': 1700,
+        'earned_income_threshold': 2500,
+        'earned_income_rate': 0.15,
+    },
+
+    # Self-employment tax
+    'se_tax': {
+        'oasdi_rate': 0.124,
+        'hi_rate': 0.029,
+        'ss_wage_base': 168600,
+        'net_earnings_factor': 0.9235,
+    },
+
+    # Income tax brackets (single)
+    'brackets_single': [
+        (0, 11600, 0.10),
+        (11600, 47150, 0.12),
+        (47150, 100525, 0.22),
+        (100525, 191950, 0.24),
+        (191950, 243725, 0.32),
+        (243725, 609350, 0.35),
+        (609350, float('inf'), 0.37),
+    ],
+
+    # Income tax brackets (joint)
+    'brackets_joint': [
+        (0, 23200, 0.10),
+        (23200, 94300, 0.12),
+        (94300, 201050, 0.22),
+        (201050, 383900, 0.24),
+        (383900, 487450, 0.32),
+        (487450, 731200, 0.35),
+        (731200, float('inf'), 0.37),
+    ],
+
+    # Social Security taxability thresholds (frozen since 1984)
+    'ss_taxability': {
+        'base_single': 25000,
+        'base_joint': 32000,
+        'adjusted_single': 34000,
+        'adjusted_joint': 44000,
+        'tier1_rate': 0.50,
+        'tier2_rate': 0.85,
+    },
+
+    # NIIT
+    'niit': {
+        'rate': 0.038,
+        'threshold_single': 200000,
+        'threshold_joint': 250000,
+    },
+}
+
+
+def calculate_eitc(df: pd.DataFrame, params: dict) -> np.ndarray:
+    """Calculate EITC per 26 USC § 32."""
+    p = params['eitc']
+
+    # Cap children at 3 for EITC purposes
+    n_children = np.minimum(df['num_eitc_children'].values, 3)
+
+    # Check investment income limit
+    disqualified = df['investment_income'].values > p['investment_income_limit']
+
+    # Get max credit by number of children
+    max_credit = np.array([p['max_credit'].get(n, p['max_credit'][3]) for n in n_children])
+
+    # Get earned income threshold
+    ei_threshold = np.array([p['earned_income_threshold'].get(n, p['earned_income_threshold'][3]) for n in n_children])
+
+    # Get phaseout start
+    is_joint = df['is_joint'].values
+    phaseout_start = np.where(
+        is_joint,
+        np.array([p['phaseout_start']['joint'].get(n, p['phaseout_start']['joint'][3]) for n in n_children]),
+        np.array([p['phaseout_start']['single'].get(n, p['phaseout_start']['single'][3]) for n in n_children])
+    )
+
+    # Get phaseout rate
+    phaseout_rate = np.array([p['phaseout_rate'].get(n, p['phaseout_rate'][3]) for n in n_children])
+
+    earned = df['earned_income'].values
+    agi = df['adjusted_gross_income'].values
+
+    # Phase-in: credit builds up as earned income increases
+    phase_in_credit = np.minimum(max_credit, earned * phaseout_rate)
+
+    # Phase-out: credit reduces as income exceeds threshold
+    phase_out_income = np.maximum(earned, agi)
+    excess_income = np.maximum(0, phase_out_income - phaseout_start)
+    phase_out_reduction = excess_income * phaseout_rate
+
+    # Final credit
+    eitc = np.maximum(0, phase_in_credit - phase_out_reduction)
+
+    # Zero out if disqualified by investment income
+    eitc = np.where(disqualified, 0, eitc)
+
+    return eitc
+
+
+def calculate_ctc(df: pd.DataFrame, params: dict) -> tuple[np.ndarray, np.ndarray]:
+    """
+    Calculate Child Tax Credit per 26 USC § 24.
+
+    Returns (nonrefundable_ctc, refundable_actc)
+    """
+    p = params['ctc']
+
+    n_children = df['num_ctc_children'].values
+    n_other_deps = df['num_other_dependents'].values
+
+    # Credit before phaseout
+    credit_before = n_children * p['credit_per_child'] + n_other_deps * p['credit_per_other_dependent']
+
+    # Phaseout threshold
+    threshold = np.where(
+        df['is_joint'].values,
+        p['phaseout_threshold_joint'],
+        p['phaseout_threshold_single']
+    )
+
+    # Phaseout reduction: $50 per $1000 over threshold
+    agi = df['adjusted_gross_income'].values
+    excess = np.maximum(0, agi - threshold)
+    increments = np.ceil(excess / 1000)
+    phaseout = increments * p['phaseout_rate']
+
+    # Tentative credit after phaseout
+    tentative = np.maximum(0, credit_before - phaseout)
+
+    # ACTC calculation (refundable portion)
+    earned = df['earned_income'].values
+    excess_earned = np.maximum(0, earned - p['earned_income_threshold'])
+    actc_earned_portion = p['earned_income_rate'] * excess_earned
+
+    # Per-child cap on refundable amount
+    actc_cap = n_children * p['refundable_max_per_child']
+    actc_limit = np.minimum(actc_earned_portion, actc_cap)
+
+    # ACTC limited by tentative credit
+    actc = np.minimum(tentative, actc_limit)
+
+    # Nonrefundable = tentative - actc
+    nonrefundable = tentative - actc
+
+    return nonrefundable, actc
+
+
+def calculate_se_tax(df: pd.DataFrame, params: dict) -> np.ndarray:
+    """Calculate Self-Employment Tax per 26 USC § 1401."""
+    p = params['se_tax']
+
+    se_income = df['self_employment_income'].values
+
+    # Net earnings = 92.35% of SE income
+    net_earnings = np.maximum(0, se_income * p['net_earnings_factor'])
+
+    # Social Security portion (capped at wage base)
+    ss_taxable = np.minimum(net_earnings, p['ss_wage_base'])
+    ss_tax = ss_taxable * p['oasdi_rate']
+
+    # Medicare portion (no cap)
+    medicare_tax = net_earnings * p['hi_rate']
+
+    return ss_tax + medicare_tax
+
+
+def calculate_income_tax(df: pd.DataFrame, params: dict) -> np.ndarray:
+    """Calculate income tax using progressive brackets per 26 USC § 1."""
+    taxable = df['taxable_income'].values
+    is_joint = df['is_joint'].values
+
+    tax = np.zeros(len(df))
+
+    for i in range(len(df)):
+        brackets = params['brackets_joint'] if is_joint[i] else params['brackets_single']
+        income = taxable[i]
+        unit_tax = 0
+
+        for low, high, rate in brackets:
+            if income <= low:
+                break
+            bracket_income = min(income, high) - low
+            unit_tax += bracket_income * rate
+
+        tax[i] = unit_tax
+
+    return tax
+
+
+def calculate_taxable_ss(df: pd.DataFrame, params: dict) -> np.ndarray:
+    """Calculate taxable Social Security per 26 USC § 86."""
+    p = params['ss_taxability']
+
+    ss_benefits = df['social_security_income'].values
+
+    # Combined income = MAGI + 50% of SS benefits
+    # Using AGI as simplified MAGI
+    combined = df['adjusted_gross_income'].values + 0.5 * ss_benefits
+
+    is_joint = df['is_joint'].values
+
+    # Get thresholds
+    base = np.where(is_joint, p['base_joint'], p['base_single'])
+    adjusted = np.where(is_joint, p['adjusted_joint'], p['adjusted_single'])
+
+    # Tier 1: 50% of lesser of (benefits, excess over base)
+    excess_base = np.maximum(0, combined - base)
+    tier1 = np.minimum(p['tier1_rate'] * ss_benefits, p['tier1_rate'] * excess_base)
+
+    # Tier 2: 35% of excess over adjusted base
+    excess_adjusted = np.maximum(0, combined - adjusted)
+    tier2_addition = (p['tier2_rate'] - p['tier1_rate']) * excess_adjusted
+
+    # Total capped at 85%
+    total = tier1 + tier2_addition
+    max_taxable = p['tier2_rate'] * ss_benefits
+
+    return np.minimum(total, max_taxable)
+
+
+def calculate_niit(df: pd.DataFrame, params: dict) -> np.ndarray:
+    """Calculate Net Investment Income Tax per 26 USC § 1411."""
+    p = params['niit']
+
+    threshold = np.where(
+        df['is_joint'].values,
+        p['threshold_joint'],
+        p['threshold_single']
+    )
+
+    agi = df['adjusted_gross_income'].values
+    investment = df['investment_income'].values
+
+    # NIIT on lesser of (investment income, AGI over threshold)
+    excess_agi = np.maximum(0, agi - threshold)
+    niit_base = np.minimum(investment, excess_agi)
+
+    return niit_base * p['rate']
+
+
+def run_all_calculations(df: pd.DataFrame, year: int = 2024) -> pd.DataFrame:
+    """
+    Run all Cosilico tax calculations on tax unit data.
+
+    Args:
+        df: Tax unit DataFrame from tax_unit_builder
+        year: Tax year
+
+    Returns:
+        DataFrame with calculated tax variables added
+    """
+    params = PARAMS_2024
+
+    df = df.copy()
+
+    # Calculate each component
+    df['cos_eitc'] = calculate_eitc(df, params)
+
+    df['cos_ctc_nonref'], df['cos_ctc_ref'] = calculate_ctc(df, params)
+    df['cos_ctc_total'] = df['cos_ctc_nonref'] + df['cos_ctc_ref']
+
+    df['cos_se_tax'] = calculate_se_tax(df, params)
+
+    df['cos_income_tax'] = calculate_income_tax(df, params)
+
+    df['cos_taxable_ss'] = calculate_taxable_ss(df, params)
+
+    df['cos_niit'] = calculate_niit(df, params)
+
+    return df
+
+
+if __name__ == "__main__":
+    from tax_unit_builder import load_and_build_tax_units
+
+    print("Loading tax units...")
+    df = load_and_build_tax_units(2024)
+
+    print("Running Cosilico calculations...")
+    df = run_all_calculations(df)
+
+    print("\n=== Cosilico Calculation Results ===")
+    print(f"Tax units: {len(df):,}")
+
+    # Weighted totals
+    def wtotal(col):
+        return (df[col] * df['weight']).sum()
+
+    print("\n--- Weighted Totals ---")
+    print(f"EITC:           ${wtotal('cos_eitc'):>20,.0f}")
+    print(f"CTC Total:      ${wtotal('cos_ctc_total'):>20,.0f}")
+    print(f"  Nonrefundable:${wtotal('cos_ctc_nonref'):>20,.0f}")
+    print(f"  Refundable:   ${wtotal('cos_ctc_ref'):>20,.0f}")
+    print(f"SE Tax:         ${wtotal('cos_se_tax'):>20,.0f}")
+    print(f"Income Tax:     ${wtotal('cos_income_tax'):>20,.0f}")
+    print(f"Taxable SS:     ${wtotal('cos_taxable_ss'):>20,.0f}")
+    print(f"NIIT:           ${wtotal('cos_niit'):>20,.0f}")
+
+    # Compare to CPS reported values
+    print("\n--- CPS Reported vs Cosilico ---")
+    print(f"EITC: CPS=${wtotal('cps_eitc'):,.0f}, Cos=${wtotal('cos_eitc'):,.0f}")
+    print(f"CTC:  CPS=${wtotal('cps_ctc'):,.0f}, Cos=${wtotal('cos_ctc_total'):,.0f}")
+
+    # Recipients
+    print("\n--- Recipients (unweighted) ---")
+    print(f"EITC recipients: {(df['cos_eitc'] > 0).sum():,}")
+    print(f"CTC recipients:  {(df['cos_ctc_total'] > 0).sum():,}")
+    print(f"SE Tax payers:   {(df['cos_se_tax'] > 0).sum():,}")
