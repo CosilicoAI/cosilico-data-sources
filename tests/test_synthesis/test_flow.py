@@ -21,7 +21,7 @@ class TestConditionalMAF:
 
     def test_initialization(self):
         """Should initialize with correct dimensions."""
-        from synthesis.flows import ConditionalMAF
+        from micro.us.synthesis.flows import ConditionalMAF
 
         flow = ConditionalMAF(
             n_features=10,       # Number of tax variables
@@ -35,7 +35,7 @@ class TestConditionalMAF:
 
     def test_forward_returns_log_prob(self):
         """Forward pass should return log probability."""
-        from synthesis.flows import ConditionalMAF
+        from micro.us.synthesis.flows import ConditionalMAF
 
         flow = ConditionalMAF(n_features=10, n_context=5, n_layers=4, hidden_dim=64)
 
@@ -50,7 +50,7 @@ class TestConditionalMAF:
 
     def test_sample_returns_correct_shape(self):
         """Sample should return correct shape."""
-        from synthesis.flows import ConditionalMAF
+        from micro.us.synthesis.flows import ConditionalMAF
 
         flow = ConditionalMAF(n_features=10, n_context=5, n_layers=4, hidden_dim=64)
 
@@ -63,7 +63,7 @@ class TestConditionalMAF:
 
     def test_sample_is_deterministic_with_seed(self):
         """Sampling with same seed should give same results."""
-        from synthesis.flows import ConditionalMAF
+        from micro.us.synthesis.flows import ConditionalMAF
 
         flow = ConditionalMAF(n_features=10, n_context=5, n_layers=4, hidden_dim=64)
         context = torch.randn(5, 5)
@@ -78,7 +78,7 @@ class TestConditionalMAF:
 
     def test_log_prob_is_normalized(self):
         """Log probs should integrate to 1 (approximately, via sampling)."""
-        from synthesis.flows import ConditionalMAF
+        from micro.us.synthesis.flows import ConditionalMAF
 
         flow = ConditionalMAF(n_features=2, n_context=2, n_layers=4, hidden_dim=32)
 
@@ -107,7 +107,7 @@ class TestMAFLayer:
 
     def test_made_autoregressive_property(self):
         """MADE network should be autoregressive."""
-        from synthesis.flows import MADE
+        from micro.us.synthesis.flows import MADE
 
         made = MADE(
             n_features=5,
@@ -137,7 +137,7 @@ class TestMAFLayer:
 
     def test_affine_coupling_invertible(self):
         """Affine coupling layer should be invertible."""
-        from synthesis.flows import AffineCouplingLayer
+        from micro.us.synthesis.flows import AffineCouplingLayer
 
         layer = AffineCouplingLayer(n_features=5, n_context=3, hidden_dim=32)
 
@@ -154,7 +154,7 @@ class TestMAFLayer:
 
     def test_log_det_jacobian_correct(self):
         """Log determinant should be correct."""
-        from synthesis.flows import AffineCouplingLayer
+        from micro.us.synthesis.flows import AffineCouplingLayer
 
         layer = AffineCouplingLayer(n_features=3, n_context=2, hidden_dim=16)
 
@@ -180,16 +180,12 @@ class TestFlowTraining:
 
     def test_loss_decreases_during_training(self):
         """Negative log likelihood should decrease."""
-        from synthesis.flows import ConditionalMAF
+        from micro.us.synthesis.flows import ConditionalMAF
 
         flow = ConditionalMAF(n_features=5, n_context=3, n_layers=4, hidden_dim=32)
         optimizer = torch.optim.Adam(flow.parameters(), lr=1e-3)
 
-        # Simple training data
-        context = torch.randn(500, 3)
-        x = context[:, :5] + torch.randn(500, 5) * 0.5  # Expand/trim context
-
-        # Adjust for dimension mismatch
+        # Simple training data: features partially depend on context
         context = torch.randn(500, 3)
         x = torch.randn(500, 5)
         x[:, :3] = context + torch.randn(500, 3) * 0.3  # First 3 features depend on context
@@ -209,7 +205,7 @@ class TestFlowTraining:
 
     def test_samples_match_training_distribution(self):
         """After training, samples should match training distribution."""
-        from synthesis.flows import ConditionalMAF
+        from micro.us.synthesis.flows import ConditionalMAF
 
         flow = ConditionalMAF(n_features=2, n_context=2, n_layers=6, hidden_dim=64)
         optimizer = torch.optim.Adam(flow.parameters(), lr=1e-3)
@@ -243,7 +239,7 @@ class TestFlowWithRealTaxData:
 
     def test_handles_heavy_tails(self):
         """Should model heavy-tailed distributions (like income)."""
-        from synthesis.flows import ConditionalMAF
+        from micro.us.synthesis.flows import ConditionalMAF
 
         flow = ConditionalMAF(n_features=1, n_context=1, n_layers=6, hidden_dim=64)
         optimizer = torch.optim.Adam(flow.parameters(), lr=1e-3)
@@ -274,7 +270,7 @@ class TestFlowWithRealTaxData:
 
     def test_preserves_correlations(self):
         """Should preserve correlations between variables."""
-        from synthesis.flows import ConditionalMAF
+        from micro.us.synthesis.flows import ConditionalMAF
 
         flow = ConditionalMAF(n_features=3, n_context=2, n_layers=6, hidden_dim=64)
         optimizer = torch.optim.Adam(flow.parameters(), lr=1e-3)
@@ -314,7 +310,7 @@ class TestDiscreteVariableModel:
 
     def test_binary_variable_prediction(self):
         """Should predict binary variables (is_itemizer, has_business)."""
-        from synthesis.discrete import BinaryVariableModel
+        from micro.us.synthesis.discrete import BinaryVariableModel
 
         model = BinaryVariableModel(n_context=5, hidden_dim=32)
 
@@ -326,7 +322,7 @@ class TestDiscreteVariableModel:
 
     def test_categorical_variable_prediction(self):
         """Should predict categorical variables (filing_status)."""
-        from synthesis.discrete import CategoricalVariableModel
+        from micro.us.synthesis.discrete import CategoricalVariableModel
 
         model = CategoricalVariableModel(n_context=5, n_categories=4, hidden_dim=32)
 
@@ -338,7 +334,7 @@ class TestDiscreteVariableModel:
 
     def test_sample_discrete_variables(self):
         """Should sample discrete variables from predicted probabilities."""
-        from synthesis.discrete import DiscreteVariableSampler
+        from micro.us.synthesis.discrete import DiscreteVariableSampler
 
         sampler = DiscreteVariableSampler()
 

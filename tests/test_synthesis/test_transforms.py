@@ -18,7 +18,7 @@ class TestZeroInflatedTransform:
 
     def test_split_zeros_and_positives(self):
         """Should correctly split data into zero indicator and positive values."""
-        from synthesis.transforms import ZeroInflatedTransform
+        from micro.us.synthesis.transforms import ZeroInflatedTransform
 
         transform = ZeroInflatedTransform()
 
@@ -36,7 +36,7 @@ class TestZeroInflatedTransform:
 
     def test_recombine_zeros_and_positives(self):
         """Should correctly recombine indicator and values."""
-        from synthesis.transforms import ZeroInflatedTransform
+        from micro.us.synthesis.transforms import ZeroInflatedTransform
 
         transform = ZeroInflatedTransform()
 
@@ -49,7 +49,7 @@ class TestZeroInflatedTransform:
 
     def test_roundtrip(self):
         """Split then combine should give original data."""
-        from synthesis.transforms import ZeroInflatedTransform
+        from micro.us.synthesis.transforms import ZeroInflatedTransform
 
         transform = ZeroInflatedTransform()
 
@@ -61,7 +61,7 @@ class TestZeroInflatedTransform:
 
     def test_handles_all_zeros(self):
         """Should handle edge case of all zeros."""
-        from synthesis.transforms import ZeroInflatedTransform
+        from micro.us.synthesis.transforms import ZeroInflatedTransform
 
         transform = ZeroInflatedTransform()
 
@@ -73,7 +73,7 @@ class TestZeroInflatedTransform:
 
     def test_handles_no_zeros(self):
         """Should handle edge case of no zeros."""
-        from synthesis.transforms import ZeroInflatedTransform
+        from micro.us.synthesis.transforms import ZeroInflatedTransform
 
         transform = ZeroInflatedTransform()
 
@@ -89,7 +89,7 @@ class TestLogTransform:
 
     def test_forward_transform(self):
         """Log transform should handle positive values."""
-        from synthesis.transforms import LogTransform
+        from micro.us.synthesis.transforms import LogTransform
 
         transform = LogTransform()
 
@@ -101,7 +101,7 @@ class TestLogTransform:
 
     def test_inverse_transform(self):
         """Inverse should recover original values."""
-        from synthesis.transforms import LogTransform
+        from micro.us.synthesis.transforms import LogTransform
 
         transform = LogTransform()
 
@@ -113,7 +113,7 @@ class TestLogTransform:
 
     def test_handles_small_values(self):
         """Should handle values close to zero with offset."""
-        from synthesis.transforms import LogTransform
+        from micro.us.synthesis.transforms import LogTransform
 
         transform = LogTransform(offset=1.0)  # log(x + 1)
 
@@ -125,7 +125,7 @@ class TestLogTransform:
 
     def test_roundtrip_with_offset(self):
         """Roundtrip should work with offset."""
-        from synthesis.transforms import LogTransform
+        from micro.us.synthesis.transforms import LogTransform
 
         transform = LogTransform(offset=1.0)
 
@@ -140,7 +140,7 @@ class TestStandardization:
 
     def test_fit_computes_mean_std(self):
         """Fit should compute weighted mean and std."""
-        from synthesis.transforms import Standardizer
+        from micro.us.synthesis.transforms import Standardizer
 
         standardizer = Standardizer()
 
@@ -155,7 +155,7 @@ class TestStandardization:
 
     def test_transform_standardizes(self):
         """Transform should produce zero mean, unit variance."""
-        from synthesis.transforms import Standardizer
+        from micro.us.synthesis.transforms import Standardizer
 
         standardizer = Standardizer()
 
@@ -170,7 +170,7 @@ class TestStandardization:
 
     def test_inverse_transform(self):
         """Inverse should recover original values."""
-        from synthesis.transforms import Standardizer
+        from micro.us.synthesis.transforms import Standardizer
 
         standardizer = Standardizer()
 
@@ -185,7 +185,7 @@ class TestStandardization:
 
     def test_handles_weighted_data(self):
         """Should correctly compute weighted statistics."""
-        from synthesis.transforms import Standardizer
+        from micro.us.synthesis.transforms import Standardizer
 
         standardizer = Standardizer()
 
@@ -204,7 +204,7 @@ class TestTaxVariableTransformer:
 
     def test_fit_transform_pipeline(self):
         """Full pipeline should handle tax variable quirks."""
-        from synthesis.transforms import TaxVariableTransformer
+        from micro.us.synthesis.transforms import TaxVariableTransformer
 
         transformer = TaxVariableTransformer(
             zero_inflated=True,
@@ -225,7 +225,7 @@ class TestTaxVariableTransformer:
 
     def test_inverse_transform_recovers_original(self):
         """Inverse should recover original values."""
-        from synthesis.transforms import TaxVariableTransformer
+        from micro.us.synthesis.transforms import TaxVariableTransformer
 
         transformer = TaxVariableTransformer(
             zero_inflated=True,
@@ -244,7 +244,7 @@ class TestTaxVariableTransformer:
 
     def test_torch_compatibility(self):
         """Should work with PyTorch tensors."""
-        from synthesis.transforms import TaxVariableTransformer
+        from micro.us.synthesis.transforms import TaxVariableTransformer
 
         transformer = TaxVariableTransformer(
             zero_inflated=True,
@@ -268,7 +268,7 @@ class TestMultiVariableTransformer:
 
     def test_fit_multiple_variables(self):
         """Should fit separate transforms for each variable."""
-        from synthesis.transforms import MultiVariableTransformer
+        from micro.us.synthesis.transforms import MultiVariableTransformer
 
         transformer = MultiVariableTransformer(
             var_names=['wages', 'capital_gains', 'dividends']
@@ -290,7 +290,7 @@ class TestMultiVariableTransformer:
 
     def test_transform_all_variables(self):
         """Should transform all variables together."""
-        from synthesis.transforms import MultiVariableTransformer
+        from micro.us.synthesis.transforms import MultiVariableTransformer
 
         transformer = MultiVariableTransformer(
             var_names=['wages', 'capital_gains']
@@ -310,7 +310,7 @@ class TestMultiVariableTransformer:
 
     def test_roundtrip_multiple_variables(self):
         """Roundtrip should recover all original values."""
-        from synthesis.transforms import MultiVariableTransformer
+        from micro.us.synthesis.transforms import MultiVariableTransformer
 
         transformer = MultiVariableTransformer(
             var_names=['wages', 'capital_gains', 'dividends']

@@ -22,7 +22,7 @@ class TestMarginalFidelity:
 
     def test_kl_divergence_per_variable(self, synthetic_data, puf_data, tax_vars):
         """KL divergence for each variable should be below threshold."""
-        from synthesis.evaluation import compute_kl_divergence
+        from micro.us.synthesis.evaluation import compute_kl_divergence
 
         max_kl = 0.1  # Threshold - synthetic should be close to PUF
 
@@ -37,7 +37,7 @@ class TestMarginalFidelity:
 
     def test_zero_inflation_accuracy(self, synthetic_data, puf_data, tax_vars):
         """Fraction of zeros should match within tolerance."""
-        from synthesis.evaluation import compute_zero_fraction
+        from micro.us.synthesis.evaluation import compute_zero_fraction
 
         tolerance = 0.02  # Within 2 percentage points
 
@@ -50,7 +50,7 @@ class TestMarginalFidelity:
 
     def test_quantile_coverage(self, synthetic_data, puf_data, tax_vars):
         """Quantiles should match at 10th, 50th, 90th, 99th percentiles."""
-        from synthesis.evaluation import compute_weighted_quantile
+        from micro.us.synthesis.evaluation import compute_weighted_quantile
 
         quantiles = [0.1, 0.5, 0.9, 0.99]
         tolerance_pct = 0.10  # Within 10% of PUF quantile
@@ -75,7 +75,7 @@ class TestJointFidelity:
 
     def test_correlation_matrix_distance(self, synthetic_data, puf_data, tax_vars):
         """Correlation matrices should be similar (Frobenius norm)."""
-        from synthesis.evaluation import compute_weighted_correlation_matrix
+        from micro.us.synthesis.evaluation import compute_weighted_correlation_matrix
 
         synth_corr = compute_weighted_correlation_matrix(synthetic_data[tax_vars], synthetic_data['weight'])
         puf_corr = compute_weighted_correlation_matrix(puf_data[tax_vars], puf_data['weight'])
@@ -88,7 +88,7 @@ class TestJointFidelity:
 
     def test_pairwise_correlations(self, synthetic_data, puf_data):
         """Key economic correlations should be preserved."""
-        from synthesis.evaluation import compute_weighted_correlation
+        from micro.us.synthesis.evaluation import compute_weighted_correlation
 
         # Important economic relationships
         pairs = [
@@ -114,7 +114,7 @@ class TestJointFidelity:
 
     def test_conditional_distributions(self, synthetic_data, puf_data):
         """Conditional distributions should match (e.g., cap_gains | high_income)."""
-        from synthesis.evaluation import compute_conditional_mean
+        from micro.us.synthesis.evaluation import compute_conditional_mean
 
         # High income = top 10% AGI
         synth_high_income_mask = synthetic_data['adjusted_gross_income'] > \
@@ -148,7 +148,7 @@ class TestPolicyUtility:
 
     def test_tax_liability_by_bracket(self, synthetic_data, puf_data, irs_soi_targets):
         """Total tax liability by AGI bracket should match."""
-        from synthesis.evaluation import compute_tax_by_bracket
+        from micro.us.synthesis.evaluation import compute_tax_by_bracket
 
         brackets = ['under_25k', '25k_to_50k', '50k_to_100k', '100k_to_200k', '200k_to_500k', '500k_plus']
         tolerance_pct = 0.05
@@ -164,7 +164,7 @@ class TestPolicyUtility:
 
     def test_credit_takeup_rates(self, synthetic_data, puf_data):
         """Credit recipient counts and amounts should match."""
-        from synthesis.evaluation import compute_credit_totals
+        from micro.us.synthesis.evaluation import compute_credit_totals
 
         credits = ['eitc', 'ctc', 'cdcc', 'savers_credit', 'education_credits']
         tolerance_pct = 0.10
@@ -185,7 +185,7 @@ class TestPolicyUtility:
 
     def test_reform_impact_similarity(self, synthetic_data, puf_data):
         """Policy reform impacts should be similar between synthetic and PUF."""
-        from synthesis.evaluation import simulate_reform_impact
+        from micro.us.synthesis.evaluation import simulate_reform_impact
 
         # Example reform: increase top marginal rate by 5pp
         reform = {'top_rate_increase': 0.05}
@@ -212,7 +212,7 @@ class TestVsPolicyEngineECPS:
 
     def test_correlation_preservation_vs_pe(self, cosilico_data, pe_ecps_data, puf_data, tax_vars):
         """Cosilico should have better correlation preservation than PE ECPS."""
-        from synthesis.evaluation import compute_weighted_correlation_matrix
+        from micro.us.synthesis.evaluation import compute_weighted_correlation_matrix
 
         puf_corr = compute_weighted_correlation_matrix(puf_data[tax_vars], puf_data['weight'])
         cosilico_corr = compute_weighted_correlation_matrix(cosilico_data[tax_vars], cosilico_data['weight'])
@@ -227,7 +227,7 @@ class TestVsPolicyEngineECPS:
 
     def test_joint_distribution_quality_vs_pe(self, cosilico_data, pe_ecps_data, puf_data):
         """Cosilico should have better joint distribution fidelity."""
-        from synthesis.evaluation import compute_joint_distribution_score
+        from micro.us.synthesis.evaluation import compute_joint_distribution_score
 
         cosilico_score = compute_joint_distribution_score(cosilico_data, puf_data)
         pe_score = compute_joint_distribution_score(pe_ecps_data, puf_data)
@@ -238,7 +238,7 @@ class TestVsPolicyEngineECPS:
 
     def test_calibration_parity(self, cosilico_data, pe_ecps_data, irs_soi_targets):
         """Both should match IRS SOI calibration targets similarly."""
-        from synthesis.evaluation import compute_calibration_errors
+        from micro.us.synthesis.evaluation import compute_calibration_errors
 
         cosilico_errors = compute_calibration_errors(cosilico_data, irs_soi_targets)
         pe_errors = compute_calibration_errors(pe_ecps_data, irs_soi_targets)
@@ -260,7 +260,7 @@ class TestPrivacy:
 
     def test_minimum_nearest_neighbor_distance(self, synthetic_data, puf_data, tax_vars):
         """No synthetic record should be too close to any PUF record."""
-        from synthesis.evaluation import compute_nearest_neighbor_distances
+        from micro.us.synthesis.evaluation import compute_nearest_neighbor_distances
 
         # Compute distance from each synthetic record to nearest PUF record
         distances = compute_nearest_neighbor_distances(
@@ -278,7 +278,7 @@ class TestPrivacy:
 
     def test_no_exact_matches(self, synthetic_data, puf_data, tax_vars):
         """No synthetic record should exactly match a PUF record."""
-        from synthesis.evaluation import find_exact_matches
+        from micro.us.synthesis.evaluation import find_exact_matches
 
         matches = find_exact_matches(
             synthetic_data[tax_vars].values,
