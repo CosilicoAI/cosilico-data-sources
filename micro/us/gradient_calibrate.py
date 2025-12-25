@@ -42,6 +42,7 @@ class CalibrationResult:
     weights: np.ndarray
     original_weights: np.ndarray
     targets_df: pd.DataFrame
+    initial_loss: float
     final_loss: float
     epochs: int
     target_errors: Dict[str, float]
@@ -262,9 +263,12 @@ def calibrate_torch(
     epochs: int = 500,
     lr: float = 0.3,
     verbose: bool = True,
-) -> Tuple[np.ndarray, float]:
+) -> Tuple[np.ndarray, float, float]:
     """
     Calibrate weights using PyTorch gradient descent.
+
+    Returns:
+        Tuple of (calibrated_weights, initial_loss, final_loss)
     """
     if not HAS_TORCH:
         raise RuntimeError("PyTorch not available")
@@ -287,6 +291,7 @@ def calibrate_torch(
         group_sizes[g] = (groups_t == g).sum()
 
     optimizer = torch.optim.Adam([log_weights], lr=lr)
+    initial_loss = None
 
     for epoch in range(epochs):
         optimizer.zero_grad()
@@ -305,13 +310,17 @@ def calibrate_torch(
                 group_losses[g] = rel_errors[mask].mean()
 
         loss = group_losses.mean()
+
+        if epoch == 0:
+            initial_loss = loss.item()
+
         loss.backward()
         optimizer.step()
 
         if verbose and (epoch % 50 == 0 or epoch == epochs - 1):
             print(f"Epoch {epoch:4d}: loss = {loss.item():.6f}")
 
-    return torch.exp(log_weights).detach().numpy(), loss.item()
+    return torch.exp(log_weights).detach().numpy(), initial_loss, loss.item()
 
 
 def calibrate_scipy(
@@ -321,9 +330,12 @@ def calibrate_scipy(
     groups: np.ndarray,
     max_iter: int = 500,
     verbose: bool = True,
-) -> Tuple[np.ndarray, float]:
+) -> Tuple[np.ndarray, float, float]:
     """
     Calibrate weights using scipy L-BFGS-B.
+
+    Returns:
+        Tuple of (calibrated_weights, initial_loss, final_loss)
     """
     n_groups = groups.max() + 1
 
@@ -363,6 +375,9 @@ def calibrate_scipy(
 
     log_w0 = np.log(initial_weights + 1e-10)
 
+    # Compute initial loss
+    initial_loss = objective(log_w0)
+
     result = minimize(
         objective,
         log_w0,
@@ -371,7 +386,7 @@ def calibrate_scipy(
         options={'maxiter': max_iter, 'disp': verbose},
     )
 
-    return np.exp(result.x), result.fun
+    return np.exp(result.x), initial_loss, result.fun
 
 
 def calibrate_weights(
@@ -414,11 +429,11 @@ def calibrate_weights(
 
     # Calibrate
     if HAS_TORCH:
-        weights, final_loss = calibrate_torch(
+        weights, initial_loss, final_loss = calibrate_torch(
             A, y, original_weights, groups, epochs, lr, verbose
         )
     else:
-        weights, final_loss = calibrate_scipy(
+        weights, initial_loss, final_loss = calibrate_scipy(
             A, y, original_weights, groups, epochs, verbose
         )
 
@@ -447,6 +462,7 @@ def calibrate_weights(
         weights=weights,
         original_weights=original_weights,
         targets_df=targets_df,
+        initial_loss=initial_loss,
         final_loss=final_loss,
         epochs=epochs,
         target_errors=target_errors,

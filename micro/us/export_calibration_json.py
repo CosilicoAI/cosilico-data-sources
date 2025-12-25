@@ -43,6 +43,7 @@ def export_calibration_results(year: int = 2024, output_path: str = None) -> dic
         "tax_year": 2021,  # IRS SOI targets are for 2021
         "n_records": len(df),
         "n_targets": len(result.targets_df),
+        "initial_loss": float(result.initial_loss),
         "final_loss": float(result.final_loss),
         "optimizer": "torch" if result.epochs == 500 else "scipy",
         "epochs": result.epochs,
@@ -117,7 +118,9 @@ if __name__ == "__main__":
     print("\n" + "=" * 60)
     print("CALIBRATION SUMMARY")
     print("=" * 60)
+    print(f"Initial loss: {results['metadata']['initial_loss']:.6f}")
     print(f"Final loss: {results['metadata']['final_loss']:.6f}")
+    print(f"Reduction: {(1 - results['metadata']['final_loss'] / results['metadata']['initial_loss']) * 100:.1f}%")
     print(f"Calibrated population: {results['summary']['total_population_calibrated']:,.0f}")
     print(f"Calibrated AGI: ${results['summary']['total_agi_calibrated']:,.0f}")
 
