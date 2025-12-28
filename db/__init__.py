@@ -11,13 +11,15 @@ Design follows policyengine-us-data patterns.
 from .supabase_client import (
     SupabaseConfig,
     get_supabase_client,
+    get_table_name,
     query_sources,
+    list_datasets,
+    register_dataset,
+    query_microdata,
+    query_cps_asec,
     query_strata,
     query_targets,
-    query_cps,
-    query_puf,
-    query_silc,
-    insert_cps_batch,
+    insert_microdata_batch,
     insert_targets_batch,
 )
 

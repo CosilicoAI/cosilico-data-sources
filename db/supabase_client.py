@@ -2,9 +2,13 @@
 Supabase client for microplex-sources.
 
 Provides connection to Cosilico Supabase database for:
+- Raw microdata tables (e.g., microplex.us_census_cps_asec_2024_person)
 - Calibration targets (microplex.targets)
-- Microdata (microplex.cps, microplex.puf, microplex.silc)
 - Data sources metadata (microplex.sources)
+- Dataset registry (microplex.datasets)
+
+Table naming pattern: {jurisdiction}_{institution}_{dataset}_{year}_{table_type}
+Example: us_census_cps_asec_2024_person
 """
 
 from __future__ import annotations
@@ -72,6 +76,37 @@ def get_supabase_client() -> Client:
     return create_client(config.url, config.secret_key)
 
 
+# =============================================================================
+# Table naming helpers
+# =============================================================================
+
+def get_table_name(
+    jurisdiction: str,
+    institution: str,
+    dataset: str,
+    year: int,
+    table_type: str,
+) -> str:
+    """
+    Build table name from components.
+
+    Args:
+        jurisdiction: e.g., "us", "uk", "eu"
+        institution: e.g., "census", "irs", "ons"
+        dataset: e.g., "cps_asec", "puf", "frs"
+        year: e.g., 2024
+        table_type: e.g., "person", "household", "family"
+
+    Returns:
+        Table name like "us_census_cps_asec_2024_person"
+    """
+    return f"{jurisdiction}_{institution}_{dataset}_{year}_{table_type}"
+
+
+# =============================================================================
+# Sources and datasets
+# =============================================================================
+
 def query_sources(
     jurisdiction: Optional[str] = None,
     institution: Optional[str] = None,
@@ -87,7 +122,6 @@ def query_sources(
         List of source records
     """
     client = get_supabase_client()
-    # Use schema() to query from microplex schema
     query = client.schema("microplex").table("sources").select("*")
 
     if jurisdiction:
@@ -98,6 +132,173 @@ def query_sources(
     result = query.execute()
     return result.data
 
+
+def list_datasets(
+    jurisdiction: Optional[str] = None,
+    institution: Optional[str] = None,
+    dataset: Optional[str] = None,
+    year: Optional[int] = None,
+) -> List[Dict[str, Any]]:
+    """
+    List available raw microdata datasets.
+
+    Args:
+        jurisdiction: Filter by jurisdiction
+        institution: Filter by institution
+        dataset: Filter by dataset name
+        year: Filter by year
+
+    Returns:
+        List of dataset records with table_name
+    """
+    client = get_supabase_client()
+    query = client.schema("microplex").table("datasets").select("*")
+
+    if jurisdiction:
+        query = query.eq("jurisdiction", jurisdiction)
+    if institution:
+        query = query.eq("institution", institution)
+    if dataset:
+        query = query.eq("dataset", dataset)
+    if year:
+        query = query.eq("year", year)
+
+    result = query.execute()
+    return result.data
+
+
+def register_dataset(
+    jurisdiction: str,
+    institution: str,
+    dataset: str,
+    year: int,
+    table_type: str,
+    row_count: Optional[int] = None,
+    columns: Optional[List[Dict]] = None,
+    source_url: Optional[str] = None,
+) -> Dict[str, Any]:
+    """
+    Register a new dataset in the datasets table.
+
+    Args:
+        jurisdiction: e.g., "us"
+        institution: e.g., "census"
+        dataset: e.g., "cps_asec"
+        year: e.g., 2024
+        table_type: e.g., "person"
+        row_count: Number of rows
+        columns: Column metadata [{name, dtype}, ...]
+        source_url: URL to source data
+
+    Returns:
+        Created dataset record
+    """
+    client = get_supabase_client()
+
+    data = {
+        "jurisdiction": jurisdiction,
+        "institution": institution,
+        "dataset": dataset,
+        "year": year,
+        "table_type": table_type,
+    }
+
+    if row_count:
+        data["row_count"] = row_count
+    if columns:
+        data["columns"] = columns
+    if source_url:
+        data["source_url"] = source_url
+
+    result = client.schema("microplex").table("datasets").insert(data).execute()
+    return result.data[0] if result.data else {}
+
+
+# =============================================================================
+# Raw microdata queries
+# =============================================================================
+
+def query_microdata(
+    jurisdiction: str,
+    institution: str,
+    dataset: str,
+    year: int,
+    table_type: str,
+    columns: Optional[List[str]] = None,
+    filters: Optional[Dict[str, Any]] = None,
+    limit: int = 100000,
+) -> pd.DataFrame:
+    """
+    Query raw microdata from a specific table.
+
+    Args:
+        jurisdiction: e.g., "us"
+        institution: e.g., "census"
+        dataset: e.g., "cps_asec"
+        year: e.g., 2024
+        table_type: e.g., "person", "household"
+        columns: Specific columns to select (default all)
+        filters: Dict of {column: value} filters
+        limit: Maximum records
+
+    Returns:
+        DataFrame with microdata records
+    """
+    client = get_supabase_client()
+    table_name = get_table_name(jurisdiction, institution, dataset, year, table_type)
+
+    select_cols = ",".join(columns) if columns else "*"
+    query = client.schema("microplex").table(table_name).select(select_cols)
+
+    if filters:
+        for col, val in filters.items():
+            query = query.eq(col, val)
+
+    query = query.limit(limit)
+    result = query.execute()
+
+    return pd.DataFrame(result.data)
+
+
+def query_cps_asec(
+    year: int,
+    table_type: str = "person",
+    state_fips: Optional[int] = None,
+    columns: Optional[List[str]] = None,
+    limit: int = 100000,
+) -> pd.DataFrame:
+    """
+    Query CPS ASEC microdata (convenience wrapper).
+
+    Args:
+        year: Data year
+        table_type: "person", "household", or "family"
+        state_fips: Filter by state FIPS code
+        columns: Specific columns
+        limit: Maximum records
+
+    Returns:
+        DataFrame with CPS records
+    """
+    filters = {}
+    if state_fips:
+        filters["gestfips"] = state_fips
+
+    return query_microdata(
+        jurisdiction="us",
+        institution="census",
+        dataset="cps_asec",
+        year=year,
+        table_type=table_type,
+        columns=columns,
+        filters=filters,
+        limit=limit,
+    )
+
+
+# =============================================================================
+# Targets and strata
+# =============================================================================
 
 def query_strata(
     jurisdiction: Optional[str] = None,
@@ -112,7 +313,6 @@ def query_strata(
         List of strata records with nested constraints
     """
     client = get_supabase_client()
-    # Join with stratum_constraints
     query = client.schema("microplex").table("strata").select("*, stratum_constraints(*)")
 
     if jurisdiction:
@@ -160,120 +360,41 @@ def query_targets(
     return data
 
 
-def query_cps(
+# =============================================================================
+# Insert operations
+# =============================================================================
+
+def insert_microdata_batch(
+    jurisdiction: str,
+    institution: str,
+    dataset: str,
     year: int,
-    state_fips: Optional[int] = None,
-    limit: int = 100000,
-    columns: Optional[List[str]] = None,
-) -> pd.DataFrame:
-    """
-    Query CPS microdata from microplex.cps.
-
-    Args:
-        year: Data year (required)
-        state_fips: Filter by state FIPS code
-        limit: Maximum records to return (default 100k)
-        columns: Specific columns to select (default all)
-
-    Returns:
-        DataFrame with CPS records
-    """
-    client = get_supabase_client()
-
-    select_cols = ",".join(columns) if columns else "*"
-    query = client.schema("microplex").table("cps").select(select_cols)
-
-    query = query.eq("year", year)
-
-    if state_fips:
-        query = query.eq("state_fips", state_fips)
-
-    query = query.limit(limit)
-    result = query.execute()
-
-    return pd.DataFrame(result.data)
-
-
-def query_puf(
-    year: int,
-    limit: int = 100000,
-    columns: Optional[List[str]] = None,
-) -> pd.DataFrame:
-    """
-    Query PUF microdata from microplex.puf.
-
-    Args:
-        year: Data year
-        limit: Maximum records
-        columns: Specific columns to select
-
-    Returns:
-        DataFrame with PUF records
-    """
-    client = get_supabase_client()
-
-    select_cols = ",".join(columns) if columns else "*"
-    query = client.schema("microplex").table("puf").select(select_cols)
-    query = query.eq("year", year)
-    query = query.limit(limit)
-
-    result = query.execute()
-    return pd.DataFrame(result.data)
-
-
-def query_silc(
-    year: int,
-    country: Optional[str] = None,
-    limit: int = 100000,
-    columns: Optional[List[str]] = None,
-) -> pd.DataFrame:
-    """
-    Query EU-SILC microdata from microplex.silc.
-
-    Args:
-        year: Data year
-        country: ISO 2-letter country code (e.g., "DE", "FR")
-        limit: Maximum records
-        columns: Specific columns to select
-
-    Returns:
-        DataFrame with SILC records
-    """
-    client = get_supabase_client()
-
-    select_cols = ",".join(columns) if columns else "*"
-    query = client.schema("microplex").table("silc").select(select_cols)
-    query = query.eq("year", year)
-
-    if country:
-        query = query.eq("country", country)
-
-    query = query.limit(limit)
-    result = query.execute()
-
-    return pd.DataFrame(result.data)
-
-
-def insert_cps_batch(
+    table_type: str,
     records: List[Dict[str, Any]],
     chunk_size: int = 1000,
 ) -> int:
     """
-    Insert CPS records in batches.
+    Insert microdata records in batches.
 
     Args:
+        jurisdiction: e.g., "us"
+        institution: e.g., "census"
+        dataset: e.g., "cps_asec"
+        year: e.g., 2024
+        table_type: e.g., "person"
         records: List of record dicts
-        chunk_size: Records per batch (default 1000)
+        chunk_size: Records per batch
 
     Returns:
         Number of records inserted
     """
     client = get_supabase_client()
+    table_name = get_table_name(jurisdiction, institution, dataset, year, table_type)
     total = 0
 
     for i in range(0, len(records), chunk_size):
         chunk = records[i:i + chunk_size]
-        client.schema("microplex").table("cps").insert(chunk).execute()
+        client.schema("microplex").table(table_name).insert(chunk).execute()
         total += len(chunk)
 
     return total
