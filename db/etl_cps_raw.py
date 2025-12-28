@@ -9,6 +9,7 @@ Table naming: microplex.us_census_cps_asec_{year}_{table_type}
 Usage:
     python -m db.etl_cps_raw --year 2024
     python -m db.etl_cps_raw --year 2024 --dry-run
+    python -m db.etl_cps_raw --year 2024 --method csv  # Export to CSV for dashboard import
 """
 
 from __future__ import annotations
@@ -276,6 +277,75 @@ def _insert_batch(
     return total
 
 
+def export_cps_to_csv(
+    year: int,
+    output_dir: Optional[Path] = None,
+) -> Dict[str, Path]:
+    """
+    Export CPS data to CSV files for bulk import to Supabase.
+
+    Much faster than record-by-record insert. Import via:
+    - Supabase Dashboard: Table Editor > Import CSV
+    - psql: \\copy microplex.us_census_cps_asec_2024_person FROM 'person.csv' CSV HEADER
+
+    Args:
+        year: Data year
+        output_dir: Directory for CSV files (default: current dir)
+
+    Returns:
+        Dict of {table_type: csv_path}
+    """
+    cache_dir = get_raw_cache_dir(year)
+    output_dir = output_dir or Path(".")
+
+    paths = {}
+    table_names = get_cps_table_names(year)
+
+    # Person
+    person_path = cache_dir / "person.parquet"
+    if person_path.exists():
+        print(f"Exporting person records...")
+        df = pd.read_parquet(person_path)
+        records = prepare_person_records(df)
+        out_df = pd.DataFrame(records)
+        csv_path = output_dir / f"cps_asec_{year}_person.csv"
+        out_df.to_csv(csv_path, index=False)
+        paths["person"] = csv_path
+        print(f"  Exported {len(out_df):,} records to {csv_path}")
+
+    # Household
+    hh_path = cache_dir / "household.parquet"
+    if hh_path.exists():
+        print(f"Exporting household records...")
+        df = pd.read_parquet(hh_path)
+        records = prepare_household_records(df)
+        out_df = pd.DataFrame(records)
+        csv_path = output_dir / f"cps_asec_{year}_household.csv"
+        out_df.to_csv(csv_path, index=False)
+        paths["household"] = csv_path
+        print(f"  Exported {len(out_df):,} records to {csv_path}")
+
+    # Family
+    fam_path = cache_dir / "family.parquet"
+    if fam_path.exists():
+        print(f"Exporting family records...")
+        df = pd.read_parquet(fam_path)
+        records = prepare_family_records(df)
+        out_df = pd.DataFrame(records)
+        csv_path = output_dir / f"cps_asec_{year}_family.csv"
+        out_df.to_csv(csv_path, index=False)
+        paths["family"] = csv_path
+        print(f"  Exported {len(out_df):,} records to {csv_path}")
+
+    print(f"\nTo import to Supabase:")
+    print(f"  1. Go to Supabase Dashboard > Table Editor")
+    print(f"  2. Select table (e.g., {table_names['person']})")
+    print(f"  3. Click 'Insert' > 'Import data from CSV'")
+    print(f"  4. Upload the CSV file")
+
+    return paths
+
+
 def main():
     import argparse
 
@@ -286,16 +356,23 @@ def main():
     parser.add_argument("--chunk-size", type=int, default=200, help="Batch insert size")
     parser.add_argument("--truncate", action="store_true", help="Delete existing data before loading")
     parser.add_argument("--skip", type=int, default=0, help="Skip first N records (for resuming)")
+    parser.add_argument("--method", type=str, choices=["api", "csv"], default="api",
+                       help="Method: 'api' for record-by-record, 'csv' for export to CSV")
+    parser.add_argument("--output-dir", type=str, help="Output directory for CSV export")
     args = parser.parse_args()
 
-    load_cps_to_supabase(
-        year=args.year,
-        dry_run=args.dry_run,
-        limit=args.limit,
-        chunk_size=args.chunk_size,
-        truncate=args.truncate,
-        skip=args.skip,
-    )
+    if args.method == "csv":
+        output_dir = Path(args.output_dir) if args.output_dir else None
+        export_cps_to_csv(args.year, output_dir)
+    else:
+        load_cps_to_supabase(
+            year=args.year,
+            dry_run=args.dry_run,
+            limit=args.limit,
+            chunk_size=args.chunk_size,
+            truncate=args.truncate,
+            skip=args.skip,
+        )
 
 
 if __name__ == "__main__":
