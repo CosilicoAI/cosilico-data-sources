@@ -210,7 +210,7 @@ def register_dataset(
     if source_url:
         data["source_url"] = source_url
 
-    result = client.schema("microplex").table("datasets").insert(data).execute()
+    result = client.schema("microplex").table("datasets").upsert(data, on_conflict="jurisdiction,institution,dataset,year,table_type").execute()
     return result.data[0] if result.data else {}
 
 

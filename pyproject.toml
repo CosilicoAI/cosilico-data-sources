@@ -18,6 +18,7 @@ dependencies = [
     "pandas>=2.0.0",  # For microdata handling
     "scipy>=1.11.0",  # For entropy minimization optimization
     "microplex>=0.1.0",  # Synthesis and calibration algorithms
+    "pyarrow>=22.0.0",
 ]
 
 [project.optional-dependencies]
