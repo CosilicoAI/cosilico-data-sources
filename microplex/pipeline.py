@@ -391,6 +391,9 @@ def run_pipeline(
     df["weight"] = result.calibrated_weights
     df["weight_adjustment"] = result.adjustment_factors
 
+    # Add AGI bracket for analysis
+    df["agi_bracket"] = assign_agi_bracket(df["adjusted_gross_income"].values)
+
     print("\n" + "=" * 60)
     print("SUMMARY")
     print("=" * 60)
